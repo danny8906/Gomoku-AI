@@ -1,0 +1,35 @@
+{
+  "name": "gomoku-cf",
+  "version": "1.0.0",
+  "description": "五子棋遊戲 - 支援 AI 對戰和玩家對戰",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.{ts,js,json}",
+    "db:create": "wrangler d1 create gomoku-db",
+    "db:migrate": "wrangler d1 migrations apply gomoku-db",
+    "vectorize:create": "wrangler vectorize create gomoku-games --dimensions=384 --metric=cosine"
+  },
+  "keywords": [
+    "gomoku",
+    "五子棋",
+    "cloudflare",
+    "workers",
+    "ai",
+    "game"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.19.14",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.72.0"
+  }
+}

@@ -1,0 +1,40 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "gomoku-cf"
+main = "src/index.ts"
+compatibility_date = "2024-09-15"
+compatibility_flags = ["nodejs_compat"]
+
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORIZE"
+index_name = "gomoku-games"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gomoku-db"
+database_id = "0f777beb-259d-43a6-8a31-6886314847dd"
+
+[durable_objects]
+bindings = [
+  { name = "GAME_ROOM", class_name = "GameRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["GameRoom"]
+
+[env.production]
+name = "gomoku-cf"
+
+[env.staging]
+name = "gomoku-cf-staging"
+
+# 本地開發設定
+[env.development]
+name = "gomoku-cf-dev"
+
+[observability]
+enabled = true
+head_sampling_rate = 1 # optional. default = 1.
