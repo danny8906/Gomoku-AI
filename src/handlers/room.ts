@@ -24,9 +24,16 @@ export async function handleRoomAPI(
       break;
 
     case 'GET':
-      if (path.startsWith('/')) {
+      if (path.includes('/websocket')) {
+        // 處理 WebSocket 連接：/ROOMCODE/websocket
+        const pathParts = path.split('/');
+        const roomCode = pathParts[1]; // 第一個部分是房間代碼
+        if (roomCode && roomCode.length === 4) {
+          return handleWebSocket(request, env, roomCode);
+        }
+      } else if (path.startsWith('/')) {
         const roomCode = path.substring(1);
-        if (roomCode) {
+        if (roomCode && roomCode.length === 4) {
           return handleGetRoom(roomCode, env);
         }
       }
@@ -68,6 +75,43 @@ async function handleCreateRoom(request: Request, env: Env): Promise<Response> {
     }
 
     const result = await response.json() as { roomCode: string; gameId: string };
+
+    // 先確保用戶存在
+    const existingUser = await env.DB.prepare(`
+      SELECT id FROM users WHERE id = ?1
+    `).bind(userId).first();
+    
+    if (!existingUser) {
+      // 創建匿名用戶
+      await env.DB.prepare(`
+        INSERT OR IGNORE INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+      `).bind(
+        userId,
+        `匿名玩家_${userId.slice(-6)}`,
+        0, 0, 0, 1200,
+        Date.now(), Date.now()
+      ).run();
+    }
+
+    // 保存遊戲記錄到 D1 資料庫
+    await env.DB.prepare(`
+      INSERT INTO games (
+        id, board_state, current_player, status, mode, 
+        room_code, black_player_id, white_player_id, created_at, updated_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+    `).bind(
+      result.gameId,
+      JSON.stringify(Array(15).fill(null).map(() => Array(15).fill(null))), // 空棋盤
+      'black',
+      'waiting',
+      mode,
+      result.roomCode,
+      mode === 'pvp' ? null : userId, // PVP 模式暫時不設置玩家
+      null,
+      Date.now(),
+      Date.now()
+    ).run();
 
     // 保存房間信息到資料庫
     await env.DB.prepare(`
@@ -136,11 +180,11 @@ async function handleJoinRoom(request: Request, env: Env): Promise<Response> {
     const id = env.GAME_ROOM.idFromName(roomCode);
     const gameRoom = env.GAME_ROOM.get(id);
 
-    // 加入房間
-    const response = await gameRoom.fetch(new Request('http://localhost/join', {
+    // 加入房間，將房間代碼傳遞給 Durable Object
+    const response = await gameRoom.fetch(new Request(`http://localhost/join/${roomCode}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomCode })
+      body: JSON.stringify({ roomCode, userId })
     }));
 
     if (!response.ok) {
@@ -252,8 +296,14 @@ export async function handleWebSocket(
     const id = env.GAME_ROOM.idFromName(roomCode);
     const gameRoom = env.GAME_ROOM.get(id);
 
-    // 轉發 WebSocket 請求
-    return await gameRoom.fetch(new Request('http://localhost/websocket', {
+    // 轉發 WebSocket 請求，保留查詢參數並添加房間代碼
+    const originalUrl = new URL(request.url);
+    const forwardUrl = `http://localhost/websocket${originalUrl.search}&roomCode=${roomCode}`;
+    
+    console.log(`轉發 WebSocket 請求: ${forwardUrl}`);
+    
+    return await gameRoom.fetch(new Request(forwardUrl, {
+      method: request.method,
       headers: request.headers
     }));
   } catch (error) {

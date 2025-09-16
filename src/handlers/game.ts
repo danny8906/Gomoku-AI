@@ -7,6 +7,7 @@ import { GameLogic } from '../game/GameLogic';
 import { AIEngine } from '../ai/AIEngine';
 import { VectorizeService } from '../ai/VectorizeService';
 import { corsHeaders } from '../utils/cors';
+import { saveAIGameRecord } from './gameRecord';
 
 export async function handleGameAPI(
   request: Request,
@@ -279,6 +280,11 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
       newGameState.updatedAt,
       gameId
     ).run();
+
+    // 如果遊戲結束，保存遊戲記錄
+    if (newGameState.status === 'finished') {
+      await saveAIGameRecord(newGameState, env);
+    }
 
     // 分析局面並儲存到 Vectorize
     const vectorizeService = new VectorizeService(env);

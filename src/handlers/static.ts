@@ -235,13 +235,13 @@ function getGameHTML(): string {
                     </div>
                 </div>
                 <div class="game-over-buttons">
-                    <button class="btn primary" onclick="restartGame()">
+                    <button class="btn primary" id="restart-btn">
                         <span>🔄</span> 重新開始
                     </button>
-                    <button class="btn secondary" onclick="returnToHome()">
+                    <button class="btn secondary" id="home-btn">
                         <span>🏠</span> 返回首頁
                     </button>
-                    <button class="btn secondary" onclick="analyzeGame()" id="analyze-btn">
+                    <button class="btn secondary" id="analyze-btn">
                         <span>📊</span> 分析棋局
                     </button>
                 </div>
@@ -321,6 +321,32 @@ function getRoomHTML(): string {
                 </div>
             </div>
         </main>
+        
+        <!-- 遊戲結束彈窗 -->
+        <div id="game-over-modal" class="modal" style="display: none;">
+            <div class="modal-content game-over-content">
+                <div class="game-result">
+                    <h2 id="game-result-title">遊戲結束</h2>
+                    <div id="game-result-icon">🎉</div>
+                    <p id="game-result-message">恭喜獲勝！</p>
+                    <div id="game-stats">
+                        <p id="game-duration">遊戲時長: --</p>
+                        <p id="total-moves">總步數: --</p>
+                    </div>
+                </div>
+                <div class="game-over-buttons">
+                    <button class="btn primary" id="restart-btn">
+                        <span>🔄</span> 重新開始
+                    </button>
+                    <button class="btn secondary" id="home-btn">
+                        <span>🏠</span> 返回首頁
+                    </button>
+                    <button class="btn secondary" id="leave-btn">
+                        <span>🚪</span> 離開房間
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
     
     <script src="/app.js"></script>
@@ -915,6 +941,8 @@ body {
     text-decoration: none;
     border: none;
     cursor: pointer;
+    position: relative;
+    z-index: 10; /* 確保按鈕在最上層 */
 }
 
 .game-over-buttons .btn.primary {
@@ -956,6 +984,8 @@ body {
     height: 200%;
     background: linear-gradient(45deg, transparent, rgba(255, 215, 0, 0.3), transparent);
     animation: shine 2s infinite;
+    z-index: -1; /* 確保特效在按鈕下方 */
+    pointer-events: none; /* 確保特效不會阻擋點擊 */
 }
 
 @keyframes shine {
@@ -1115,6 +1145,9 @@ class GomokuGame {
         
         if (roomCode) {
             this.joinRoom(roomCode);
+        } else {
+            // 如果沒有房間代碼，創建新房間
+            this.createNewRoom();
         }
     }
     
@@ -1124,6 +1157,296 @@ class GomokuGame {
     
     initLeaderboardPage() {
         this.loadLeaderboard();
+    }
+    
+    async createNewRoom() {
+        try {
+            const userId = this.getCurrentUserId();
+            
+            const response = await fetch('/api/room/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mode: 'pvp',
+                    userId: userId
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.roomCode) {
+                // 更新頁面顯示房間代碼
+                const roomCodeEl = document.getElementById('room-code');
+                const shareCodeEl = document.getElementById('share-code');
+                
+                if (roomCodeEl) {
+                    roomCodeEl.textContent = \`房間代碼: \${data.roomCode}\`;
+                }
+                
+                if (shareCodeEl) {
+                    shareCodeEl.textContent = data.roomCode;
+                }
+                
+                // 連接 WebSocket 並自動加入房間
+                console.log('準備連接到房間:', data.roomCode);
+                this.connectToRoom(data.roomCode);
+                
+                // 顯示創建成功提示
+                this.showRoomCreatedToast(data.roomCode);
+                
+                console.log('房間創建成功:', data.roomCode);
+            } else {
+                throw new Error(data.error || '創建房間失敗');
+            }
+        } catch (error) {
+            console.error('創建房間失敗:', error);
+            alert('創建房間失敗，請稍後再試');
+        }
+    }
+    
+    async joinRoom(roomCode) {
+        try {
+            const userId = this.getCurrentUserId();
+            
+            // 調用 API 加入房間
+            const response = await fetch('/api/room/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomCode: roomCode,
+                    userId: userId
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.gameId) {
+                // 更新頁面顯示房間代碼
+                const roomCodeEl = document.getElementById('room-code');
+                const shareCodeEl = document.getElementById('share-code');
+                
+                if (roomCodeEl) {
+                    roomCodeEl.textContent = \`房間代碼: \${roomCode}\`;
+                }
+                
+                if (shareCodeEl) {
+                    shareCodeEl.textContent = roomCode;
+                }
+                
+                // 連接 WebSocket
+                this.connectToRoom(roomCode);
+                
+                console.log('成功加入房間:', roomCode);
+            } else {
+                throw new Error(data.error || '加入房間失敗');
+            }
+        } catch (error) {
+            console.error('加入房間失敗:', error);
+            alert(\`加入房間失敗: \${error.message}\`);
+            // 返回首頁
+            window.location.href = '/';
+        }
+    }
+    
+    connectToRoom(roomCode) {
+        // WebSocket 連接邏輯
+        const userId = this.getCurrentUserId();
+        const wsUrl = \`wss://\${window.location.host}/api/room/\${roomCode}/websocket?userId=\${userId}\`;
+        
+        console.log('WebSocket 連接 URL:', wsUrl);
+        console.log('房間代碼:', roomCode, '用戶ID:', userId);
+        
+        try {
+            this.websocket = new WebSocket(wsUrl);
+            
+            this.websocket.onopen = () => {
+                console.log('WebSocket 連接成功');
+                
+                // 發送加入房間訊息
+                this.websocket.send(JSON.stringify({
+                    type: 'join',
+                    data: { player: null }, // 讓伺服器自動分配玩家顏色
+                    timestamp: Date.now()
+                }));
+            };
+            
+            this.websocket.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                this.handleWebSocketMessage(message);
+            };
+            
+            this.websocket.onclose = () => {
+                console.log('WebSocket 連接關閉');
+            };
+            
+            this.websocket.onerror = (error) => {
+                console.error('WebSocket 錯誤:', error);
+            };
+        } catch (error) {
+            console.error('WebSocket 連接失敗:', error);
+        }
+    }
+    
+    handleWebSocketMessage(message) {
+        switch (message.type) {
+            case 'gameState':
+                if (message.data) {
+                    this.gameState = message.data;
+                    this.updateGameDisplay();
+                    this.drawBoard();
+                    
+                    // 更新玩家信息顯示
+                    this.updateRoomPlayerInfo();
+                    
+                    // 檢查遊戲是否結束，顯示彈窗
+                    console.log('檢查遊戲狀態:', this.gameState.status, '獲勝者:', this.gameState.winner);
+                    if (this.gameState.status === 'finished') {
+                        console.log('遊戲結束，準備顯示彈窗');
+                        setTimeout(() => {
+                            console.log('顯示遊戲結束彈窗');
+                            this.showGameOverModal();
+                        }, 1000); // 延遲1秒顯示，讓玩家看到最後一步
+                    }
+                    
+                    // 如果遊戲開始，隱藏等待區域，顯示遊戲區域
+                    if (this.gameState.status === 'playing') {
+                        const waitingArea = document.getElementById('waiting-area');
+                        const gameArea = document.getElementById('game-area');
+                        
+                        if (waitingArea) waitingArea.style.display = 'none';
+                        if (gameArea) gameArea.style.display = 'block';
+                        
+                        // 初始化棋盤
+                        this.canvas = document.getElementById('game-board');
+                        if (this.canvas) {
+                            this.ctx = this.canvas.getContext('2d');
+                            this.canvas.addEventListener('click', (e) => this.handleRoomBoardClick(e));
+                            this.drawBoard();
+                        }
+                        
+                        // 確定自己的玩家顏色
+                        const myUserId = this.getCurrentUserId();
+                        if (this.gameState.players.black === myUserId) {
+                            this.myPlayer = 'black';
+                        } else if (this.gameState.players.white === myUserId) {
+                            this.myPlayer = 'white';
+                        }
+                        
+                        this.isMyTurn = this.gameState.currentPlayer === this.myPlayer;
+                    }
+                }
+                break;
+                
+            case 'join':
+                console.log('玩家加入:', message.data.userId);
+                this.updatePlayerCount();
+                break;
+                
+            case 'leave':
+                console.log('玩家離開:', message.data.userId);
+                this.updatePlayerCount();
+                break;
+                
+            case 'chat':
+                this.displayChatMessage(message.data);
+                break;
+                
+            case 'error':
+                console.error('房間錯誤:', message.data.message);
+                break;
+        }
+    }
+    
+    updatePlayerCount() {
+        // 更新玩家數量顯示
+        const playerCountEl = document.getElementById('player-count');
+        if (playerCountEl && this.gameState) {
+            const playerCount = Object.keys(this.gameState.players).filter(key => this.gameState.players[key]).length;
+            playerCountEl.textContent = \`玩家: \${playerCount}/2\`;
+        }
+    }
+    
+    updateRoomPlayerInfo() {
+        if (!this.gameState) return;
+        
+        const blackPlayerEl = document.getElementById('black-player');
+        const whitePlayerEl = document.getElementById('white-player');
+        
+        if (blackPlayerEl) {
+            if (this.gameState.players.black) {
+                const userId = this.gameState.players.black;
+                blackPlayerEl.textContent = userId.startsWith('匿名玩家_') ? 
+                    userId : \`玩家 \${userId.slice(-6)}\`;
+            } else {
+                blackPlayerEl.textContent = '等待中...';
+            }
+        }
+        
+        if (whitePlayerEl) {
+            if (this.gameState.players.white) {
+                const userId = this.gameState.players.white;
+                whitePlayerEl.textContent = userId.startsWith('匿名玩家_') ? 
+                    userId : \`玩家 \${userId.slice(-6)}\`;
+            } else {
+                whitePlayerEl.textContent = '等待中...';
+            }
+        }
+        
+        // 更新玩家數量
+        this.updatePlayerCount();
+    }
+    
+    displayChatMessage(chatData) {
+        const chatMessages = document.getElementById('chat-messages');
+        if (chatMessages) {
+            const messageEl = document.createElement('div');
+            messageEl.className = 'chat-message';
+            messageEl.innerHTML = \`
+                <span class="chat-user">\${chatData.userId}:</span>
+                <span class="chat-text">\${chatData.message}</span>
+            \`;
+            chatMessages.appendChild(messageEl);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+    
+    showRoomCreatedToast(roomCode) {
+        const toast = document.createElement('div');
+        toast.innerHTML = \`
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <span>🎉</span>
+                <div>
+                    <div style="font-weight: 600;">房間創建成功！</div>
+                    <div style="font-size: 0.9rem; opacity: 0.9;">房間代碼: \${roomCode}</div>
+                    <div style="font-size: 0.8rem; opacity: 0.8;">您已自動加入房間</div>
+                </div>
+            </div>
+        \`;
+        toast.style.cssText = \`
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+        \`;
+        
+        document.body.appendChild(toast);
+        
+        // 5秒後移除提示
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, 5000);
     }
     
     async createGame(mode) {
@@ -1240,6 +1563,37 @@ class GomokuGame {
                 this.makeMove(row, col);
             }
         }
+    }
+    
+    handleRoomBoardClick(event) {
+        if (!this.isMyTurn || !this.myPlayer) return;
+        
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        const col = Math.floor(x / this.cellSize);
+        const row = Math.floor(y / this.cellSize);
+        
+        if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+            if (!this.gameState.board[row] || !this.gameState.board[row][col]) {
+                this.makeRoomMove(row, col);
+            }
+        }
+    }
+    
+    makeRoomMove(row, col) {
+        if (!this.websocket || !this.myPlayer) return;
+        
+        // 通過 WebSocket 發送落子指令
+        this.websocket.send(JSON.stringify({
+            type: 'move',
+            data: { position: { row, col } },
+            timestamp: Date.now()
+        }));
+        
+        // 暫時禁用點擊，等待伺服器響應
+        this.isMyTurn = false;
     }
     
     drawBoard() {
@@ -1381,7 +1735,12 @@ class GomokuGame {
     }
     
     showGameOverModal() {
-        if (!this.gameState || this.gameState.status !== 'finished') return;
+        console.log('showGameOverModal 被調用');
+        
+        if (!this.gameState || this.gameState.status !== 'finished') {
+            console.log('遊戲狀態檢查失敗:', this.gameState?.status);
+            return;
+        }
         
         const modal = document.getElementById('game-over-modal');
         const titleEl = document.getElementById('game-result-title');
@@ -1390,7 +1749,19 @@ class GomokuGame {
         const durationEl = document.getElementById('game-duration');
         const movesEl = document.getElementById('total-moves');
         
-        if (!modal || !titleEl || !iconEl || !messageEl || !durationEl || !movesEl) return;
+        console.log('DOM 元素檢查:', {
+            modal: !!modal,
+            titleEl: !!titleEl,
+            iconEl: !!iconEl,
+            messageEl: !!messageEl,
+            durationEl: !!durationEl,
+            movesEl: !!movesEl
+        });
+        
+        if (!modal || !titleEl || !iconEl || !messageEl || !durationEl || !movesEl) {
+            console.log('缺少必要的 DOM 元素');
+            return;
+        }
         
         // 計算遊戲時長
         const duration = this.gameState.updatedAt - this.gameState.createdAt;
@@ -1433,12 +1804,57 @@ class GomokuGame {
         
         // 顯示彈窗
         modal.style.display = 'flex';
+        console.log('遊戲結束彈窗已顯示');
+        
+        // 直接綁定按鈕事件
+        const restartBtn = document.getElementById('restart-btn');
+        const homeBtn = document.getElementById('home-btn');
+        const leaveBtn = document.getElementById('leave-btn');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        
+        console.log('檢查按鈕元素:', {
+            restartBtn: !!restartBtn,
+            homeBtn: !!homeBtn,
+            leaveBtn: !!leaveBtn,
+            analyzeBtn: !!analyzeBtn
+        });
+        
+        if (restartBtn) {
+            restartBtn.onclick = function() {
+                console.log('重新開始按鈕被點擊');
+                restartGame();
+            };
+        }
+        
+        if (homeBtn) {
+            homeBtn.onclick = function() {
+                console.log('返回首頁按鈕被點擊');
+                returnToHome();
+            };
+        }
+        
+        if (leaveBtn) {
+            leaveBtn.onclick = function() {
+                console.log('離開房間按鈕被點擊');
+                leaveRoom();
+            };
+        }
+        
+        if (analyzeBtn) {
+            analyzeBtn.onclick = function() {
+                console.log('分析棋局按鈕被點擊');
+                analyzeGame();
+            };
+        }
+        
+        console.log('按鈕事件已綁定');
         
         // 添加慶祝音效（如果需要的話）
         if (this.gameState.winner !== 'draw') {
             this.playCelebrationSound();
         }
     }
+    
     
     playCelebrationSound() {
         // 簡單的音效提示，使用 Web Audio API
@@ -1781,19 +2197,49 @@ function restartGame() {
         modal.style.display = 'none';
     }
     
-    // 重新開始遊戲
-    const url = new URL(window.location);
-    const mode = url.searchParams.get('mode') || 'ai';
+    // 檢查當前頁面類型
+    const path = window.location.pathname;
     
-    // 創建新遊戲
-    if (game) {
-        game.createGame(mode);
-    } else {
+    if (path === '/room') {
+        // 房間模式：重新載入房間頁面
+        console.log('房間模式重新開始');
         location.reload();
+    } else {
+        // 遊戲模式：創建新遊戲
+        const url = new URL(window.location);
+        const mode = url.searchParams.get('mode') || 'ai';
+        
+        if (game) {
+            game.createGame(mode);
+        } else {
+            location.reload();
+        }
     }
 }
 
 function returnToHome() {
+    console.log('返回首頁按鈕被點擊');
+    
+    // 隱藏彈窗
+    const modal = document.getElementById('game-over-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    
+    // 如果在房間中，先發送離開訊息
+    if (game && game.websocket && window.location.pathname === '/room') {
+        try {
+            game.websocket.send(JSON.stringify({
+                type: 'leave',
+                data: {},
+                timestamp: Date.now()
+            }));
+            game.websocket.close();
+        } catch (error) {
+            console.log('發送離開訊息失敗:', error);
+        }
+    }
+    
     window.location.href = '/';
 }
 
@@ -1831,6 +2277,51 @@ function analyzeGame() {
     
     if (suggestionsEl) {
         suggestionsEl.style.display = 'block';
+    }
+}
+
+function sendMessage() {
+    const chatInput = document.getElementById('chat-input');
+    if (!chatInput || !game.websocket) return;
+    
+    const message = chatInput.value.trim();
+    if (message.length === 0) return;
+    
+    // 發送聊天訊息
+    game.websocket.send(JSON.stringify({
+        type: 'chat',
+        data: { message },
+        timestamp: Date.now()
+    }));
+    
+    // 清空輸入框
+    chatInput.value = '';
+}
+
+function leaveRoom() {
+    console.log('嘗試離開房間');
+    
+    // 隱藏彈窗（如果有的話）
+    const modal = document.getElementById('game-over-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    
+    if (confirm('確定要離開房間嗎？')) {
+        if (game && game.websocket) {
+            try {
+                game.websocket.send(JSON.stringify({
+                    type: 'leave',
+                    data: {},
+                    timestamp: Date.now()
+                }));
+                game.websocket.close();
+            } catch (error) {
+                console.log('發送離開訊息失敗:', error);
+            }
+        }
+        console.log('離開房間，返回首頁');
+        window.location.href = '/';
     }
 }
 
@@ -1896,6 +2387,18 @@ async function searchPlayers() {
 
 // 表單提交處理
 document.addEventListener('DOMContentLoaded', function() {
+    // 聊天輸入框 Enter 鍵支援
+    const chatInput = document.getElementById('chat-input');
+    if (chatInput) {
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    }
+    
+    // 移除事件委託，改用直接綁定
+    
     const authForm = document.getElementById('auth-form');
     if (authForm) {
         authForm.addEventListener('submit', async function(e) {
