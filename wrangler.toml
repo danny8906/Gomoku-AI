@@ -25,7 +25,7 @@ bindings = [
 directory = "public"
 
 [[migrations]]
-tag = "v1"
+tag = "v4"
 new_classes = ["GameRoom"]
 
 [env.production]
