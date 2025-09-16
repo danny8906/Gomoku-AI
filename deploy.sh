@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 五子棋遊戲部署腳本
+# OmniAI 五子棋遊戲部署腳本
 
-echo "🚀 開始部署五子棋遊戲到 Cloudflare Workers..."
+echo "🚀 開始部署 OmniAI 五子棋遊戲到 Cloudflare Workers..."
 
 # 檢查 wrangler 是否已安裝
 if ! command -v wrangler &> /dev/null; then
@@ -66,4 +66,4 @@ echo "• Workers Dashboard: https://dash.cloudflare.com/workers"
 echo "• D1 Dashboard: https://dash.cloudflare.com/d1"
 echo "• Vectorize Dashboard: https://dash.cloudflare.com/vectorize"
 echo ""
-echo "🎮 現在可以開始使用五子棋遊戲了！"
+echo "🎮 現在可以開始使用 OmniAI 五子棋遊戲了！"

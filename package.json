@@ -1,7 +1,7 @@
 {
   "name": "gomoku-cf",
   "version": "1.0.0",
-  "description": "五子棋遊戲 - 支援 AI 對戰和玩家對戰",
+  "description": "OmniAI 五子棋 - 支援 AI 對戰和玩家對戰",
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",

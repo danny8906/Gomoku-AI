@@ -45,6 +45,7 @@ export async function serveStaticAssets(request: Request, env: Env): Promise<Res
         headers: { 'Content-Type': 'text/css; charset=utf-8' }
       });
     
+    
     default:
       return new Response('Not found', { status: 404 });
   }
@@ -56,13 +57,13 @@ function getIndexHTML(): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>五子棋遊戲 - Cloudflare Workers AI</title>
+    <title>OmniAI 五子棋 - Cloudflare Workers AI</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1>🔴 五子棋遊戲</h1>
+            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
             <p>支援 AI 對戰和玩家對戰</p>
         </header>
         
@@ -140,7 +141,7 @@ function getIndexHTML(): string {
         </main>
         
         <footer class="footer">
-            <p>&copy; 2024 五子棋遊戲 - 由 Cloudflare Workers AI 驅動</p>
+            <p>&copy; 2024 OmniAI 五子棋 - 由 Cloudflare Workers AI 驅動</p>
         </footer>
     </div>
     
@@ -155,13 +156,13 @@ function getGameHTML(): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>遊戲中 - 五子棋</title>
+    <title>遊戲中 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1>🔴 五子棋遊戲</h1>
+            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
             <div class="game-info">
                 <span id="game-mode">AI 對戰</span>
                 <span id="current-player">黑棋回合</span>
@@ -260,13 +261,13 @@ function getRoomHTML(): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>房間 - 五子棋</title>
+    <title>房間 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1>🔴 五子棋房間</h1>
+            <h1>♟️ OmniAI 五子棋房間</h1>
             <div class="room-info">
                 <span id="room-code">房間代碼: ----</span>
                 <span id="player-count">玩家: 0/2</span>
@@ -360,7 +361,7 @@ function getProfileHTML(): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>個人資料 - 五子棋</title>
+    <title>個人資料 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -427,7 +428,7 @@ function getLeaderboardHTML(): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>排行榜 - 五子棋</title>
+    <title>排行榜 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -472,7 +473,7 @@ function getLeaderboardHTML(): string {
 }
 
 function getStylesCSS(): string {
-  return `/* 五子棋遊戲樣式 */
+  return `/* OmniAI 五子棋樣式 */
 * {
     margin: 0;
     padding: 0;
@@ -1068,8 +1069,9 @@ input:focus {
 }`;
 }
 
+
 function getAppJS(): string {
-  return `// 五子棋遊戲 JavaScript
+  return `// OmniAI 五子棋 JavaScript
 
 class GomokuGame {
     constructor() {

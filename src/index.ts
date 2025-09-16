@@ -1,5 +1,5 @@
 /**
- * Cloudflare Workers 五子棋遊戲主入口
+ * Cloudflare Workers OmniAI 五子棋遊戲主入口
  * 支援 AI 對戰和玩家對戰功能
  */
 

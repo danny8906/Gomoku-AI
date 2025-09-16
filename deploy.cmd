@@ -1,7 +1,7 @@
 @echo off
-REM 五子棋遊戲部署腳本 (Windows 版本)
+REM OmniAI 五子棋遊戲部署腳本 (Windows 版本)
 
-echo 🚀 開始部署五子棋遊戲到 Cloudflare Workers...
+echo 🚀 開始部署 OmniAI 五子棋遊戲到 Cloudflare Workers...
 
 REM 檢查 wrangler 是否已安裝
 where wrangler >nul 2>nul
@@ -92,6 +92,6 @@ echo • Workers Dashboard: https://dash.cloudflare.com/workers
 echo • D1 Dashboard: https://dash.cloudflare.com/d1
 echo • Vectorize Dashboard: https://dash.cloudflare.com/vectorize
 echo.
-echo 🎮 現在可以開始使用五子棋遊戲了！
+echo 🎮 現在可以開始使用 OmniAI 五子棋遊戲了！
 
 pause

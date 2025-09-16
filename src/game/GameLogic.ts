@@ -1,5 +1,5 @@
 /**
- * 五子棋遊戲核心邏輯
+ * OmniAI 五子棋遊戲核心邏輯
  */
 
 import { Player, Position, GameState, Move } from '../types';
