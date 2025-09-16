@@ -14,6 +14,9 @@ export async function saveAIGameRecord(gameState: GameState, env: Env): Promise<
     
     console.log('保存 AI 對戰記錄:', gameState.id);
     
+    // 確保用戶存在
+    await ensureUserExists(playerId, env);
+    
     const gameDuration = gameState.updatedAt - gameState.createdAt;
     
     // 確定遊戲結果
@@ -62,7 +65,7 @@ export async function saveAIGameRecord(gameState: GameState, env: Env): Promise<
     ).run();
     
     // 更新用戶戰績
-    const updateQuery = result === 'win' ? 
+    const updateQuery = result === 'win' ?
       `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3` :
       result === 'loss' ?
       `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3` :
@@ -78,5 +81,28 @@ export async function saveAIGameRecord(gameState: GameState, env: Env): Promise<
     
   } catch (error) {
     console.error('保存 AI 對戰記錄失敗:', error);
+  }
+}
+
+/**
+ * 確保用戶存在，如果不存在則創建
+ */
+async function ensureUserExists(userId: string, env: Env): Promise<void> {
+  const userExists = await env.DB.prepare(`
+    SELECT id FROM users WHERE id = ?1
+  `).bind(userId).first();
+  
+  if (!userExists) {
+    console.log(`用戶 ${userId} 不存在，正在創建...`);
+    await env.DB.prepare(`
+      INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+      VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
+    `).bind(
+      userId,
+      `匿名玩家_${userId.substring(0, 5)}`,
+      Date.now(),
+      Date.now()
+    ).run();
+    console.log(`已創建用戶: ${userId}`);
   }
 }

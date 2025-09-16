@@ -192,6 +192,14 @@ export class UserService {
     };
 
     try {
+      // 確保用戶存在
+      await this.ensureUserExists(record.userId);
+      
+      // 如果是 PVP 模式，確保對手也存在
+      if (record.opponentId && record.mode === 'pvp') {
+        await this.ensureUserExists(record.opponentId);
+      }
+
       await this.env.DB.prepare(`
         INSERT INTO game_records (
           id, game_id, user_id, opponent_id, mode, result, 
@@ -247,6 +255,29 @@ export class UserService {
     } catch (error) {
       console.error('記錄遊戲結果失敗:', error);
       throw new Error('記錄遊戲結果失敗');
+    }
+  }
+
+  /**
+   * 確保用戶存在，如果不存在則創建
+   */
+  private async ensureUserExists(userId: string): Promise<void> {
+    const userExists = await this.env.DB.prepare(`
+      SELECT id FROM users WHERE id = ?1
+    `).bind(userId).first();
+    
+    if (!userExists) {
+      console.log(`用戶 ${userId} 不存在，正在創建...`);
+      await this.env.DB.prepare(`
+        INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+        VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
+      `).bind(
+        userId,
+        `匿名玩家_${userId.substring(0, 5)}`,
+        Date.now(),
+        Date.now()
+      ).run();
+      console.log(`已創建用戶: ${userId}`);
     }
   }
 

@@ -718,6 +718,26 @@ export class GameRoom {
       for (const player of players) {
         if (!player.id) continue;
         
+        // 檢查用戶是否存在，如果不存在則創建
+        let userExists = await this.env.DB.prepare(`
+          SELECT id FROM users WHERE id = ?1
+        `).bind(player.id).first();
+        
+        if (!userExists) {
+          console.log(`用戶 ${player.id} 不存在，正在創建...`);
+          // 創建新用戶
+          await this.env.DB.prepare(`
+            INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+            VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
+          `).bind(
+            player.id,
+            `匿名玩家_${player.id.substring(0, 5)}`, // 生成用戶名
+            Date.now(),
+            Date.now()
+          ).run();
+          console.log(`已創建用戶: ${player.id}`);
+        }
+        
         // 確定遊戲結果
         let result: 'win' | 'loss' | 'draw';
         if (this.gameState.winner === 'draw') {
@@ -745,6 +765,28 @@ export class GameRoom {
           ratingChange = 0;
         }
         
+        // 獲取對手 ID，確保對手也存在
+        const opponentId = players.find(p => p.id !== player.id)?.id;
+        if (opponentId) {
+          const opponentExists = await this.env.DB.prepare(`
+            SELECT id FROM users WHERE id = ?1
+          `).bind(opponentId).first();
+          
+          if (!opponentExists) {
+            console.log(`對手 ${opponentId} 不存在，正在創建...`);
+            await this.env.DB.prepare(`
+              INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+              VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
+            `).bind(
+              opponentId,
+              `匿名玩家_${opponentId.substring(0, 5)}`,
+              Date.now(),
+              Date.now()
+            ).run();
+            console.log(`已創建對手: ${opponentId}`);
+          }
+        }
+        
         // 保存遊戲記錄
         await this.env.DB.prepare(`
           INSERT INTO game_records (
@@ -755,7 +797,7 @@ export class GameRoom {
           crypto.randomUUID(),
           this.gameState.id,
           player.id,
-          players.find(p => p.id !== player.id)?.id || null,
+          opponentId || null,
           this.gameState.mode,
           result,
           JSON.stringify(this.gameState.moves),
