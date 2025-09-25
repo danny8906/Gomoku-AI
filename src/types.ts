@@ -7,6 +7,7 @@ export interface Env {
   VECTORIZE: VectorizeIndex;
   DB: D1Database;
   GAME_ROOM: DurableObjectNamespace;
+  JWT_SECRET?: string;
 }
 
 // 遊戲相關類型

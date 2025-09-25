@@ -454,4 +454,20 @@ export class UserService {
       return [];
     }
   }
+
+  /**
+   * 更新用戶密碼
+   */
+  async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
+    try {
+      await this.env.DB.prepare(`
+        UPDATE users 
+        SET password_hash = ?1, updated_at = ?2
+        WHERE id = ?3
+      `).bind(passwordHash, Date.now(), userId).run();
+    } catch (error) {
+      console.error('更新用戶密碼失敗:', error);
+      throw new Error('更新密碼失敗');
+    }
+  }
 }

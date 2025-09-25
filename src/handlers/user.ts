@@ -105,7 +105,7 @@ async function verifyJWT(token: string, secret: string): Promise<{ valid: boolea
     }
     
     // 解析 payload
-    const decodedPayload = JSON.parse(atob(payload));
+    const decodedPayload = JSON.parse(atob(payload || ''));
     
     // 檢查過期時間
     if (decodedPayload.exp < Math.floor(Date.now() / 1000)) {
@@ -143,7 +143,7 @@ async function authenticateUser(request: Request, env: Env): Promise<{ userId: s
 export async function handleUserAPI(
   request: Request,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/user', '');
@@ -155,6 +155,9 @@ export async function handleUserAPI(
       }
       if (path === '/login') {
         return handleLogin(request, env);
+      }
+      if (path === '/change-password') {
+        return handleChangePassword(request, env);
       }
       break;
 
@@ -641,6 +644,119 @@ async function handleGetMe(request: Request, env: Env): Promise<Response> {
     console.error('獲取用戶信息失敗:', error);
     return new Response(JSON.stringify({ 
       error: '獲取用戶信息失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  }
+}
+
+/**
+ * 更改密碼
+ */
+async function handleChangePassword(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await authenticateUser(request, env);
+    if (!auth) {
+      return new Response(JSON.stringify({ 
+        error: '未授權，請先登入' 
+      }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    const { currentPassword, newPassword } = await request.json() as {
+      currentPassword: string;
+      newPassword: string;
+    };
+
+    if (!currentPassword || !newPassword) {
+      return new Response(JSON.stringify({ 
+        error: '請提供當前密碼和新密碼' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    // 驗證新密碼強度
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.isValid) {
+      return new Response(JSON.stringify({ 
+        error: passwordValidation.error 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    const userService = new UserService(env);
+    
+    // 獲取用戶信息（包含密碼哈希）
+    const userWithPassword = await userService.getUserByUsernameWithPassword(auth.username);
+    if (!userWithPassword || !userWithPassword.passwordHash) {
+      return new Response(JSON.stringify({ 
+        error: '用戶不存在或未設置密碼' 
+      }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    // 驗證當前密碼
+    const currentPasswordHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(currentPassword))
+      .then(buffer => Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, '0')).join(''));
+
+    if (currentPasswordHash !== userWithPassword.passwordHash) {
+      return new Response(JSON.stringify({ 
+        error: '當前密碼錯誤' 
+      }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    // 生成新密碼哈希
+    const newPasswordHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(newPassword))
+      .then(buffer => Array.from(new Uint8Array(buffer))
+        .map(b => b.toString(16).padStart(2, '0')).join(''));
+
+    // 更新密碼
+    await userService.updateUserPassword(auth.userId, newPasswordHash);
+
+    return new Response(JSON.stringify({ 
+      message: '密碼更改成功' 
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('更改密碼失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '更改密碼失敗',
       message: error instanceof Error ? error.message : '未知錯誤'
     }), {
       status: 500,

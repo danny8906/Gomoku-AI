@@ -64,7 +64,10 @@ function getIndexHTML(): string {
     <div id="app">
         <header class="header">
             <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
-            <p id="user-greeting">載入中...</p>
+            <div class="header-right">
+                <p id="user-greeting">載入中...</p>
+                <button class="btn danger header-logout-btn" onclick="logout()" style="display: none;">登出</button>
+            </div>
         </header>
         
         <main class="main">
@@ -99,10 +102,12 @@ function getIndexHTML(): string {
                         <button class="btn secondary" onclick="window.location.href='/leaderboard'">查看排行榜</button>
                     </div>
                     
-                    <div class="feature-card">
+                    <div class="feature-card" id="profile-card">
                         <h3>👤 個人資料</h3>
-                        <p>管理帳號和戰績</p>
-                        <button class="btn secondary" onclick="showLoginModal()">登入/註冊</button>
+                        <div id="profile-content">
+                            <p id="profile-description">管理帳號和戰績</p>
+                            <button class="btn secondary" id="profile-button" onclick="showLoginModal()">登入/註冊</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -136,6 +141,19 @@ function getIndexHTML(): string {
                         <span id="auth-switch-text">還沒有帳號？</span>
                         <a href="#" id="auth-switch" onclick="toggleAuthMode()">註冊</a>
                     </p>
+                </div>
+            </div>
+            
+            <div id="change-password-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <span class="close" onclick="hideChangePasswordModal()">&times;</span>
+                    <h3>更改密碼</h3>
+                    <form id="change-password-form">
+                        <input type="password" id="current-password" placeholder="當前密碼" required>
+                        <input type="password" id="new-password" placeholder="新密碼" required>
+                        <input type="password" id="confirm-password" placeholder="確認新密碼" required>
+                        <button type="submit" class="btn primary">更改密碼</button>
+                    </form>
                 </div>
             </div>
         </main>
@@ -507,6 +525,18 @@ body {
     font-weight: 700;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.header-logout-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
 .game-info, .room-info {
     display: flex;
     gap: 1rem;
@@ -579,6 +609,47 @@ body {
     line-height: 1.6;
 }
 
+
+#profile-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.user-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+}
+
+.user-stats p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+#profile-button {
+    white-space: nowrap;
+    min-width: 120px;
+    padding: 0.75rem 1.5rem;
+}
+
+#profile-button {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+#profile-button .btn {
+    white-space: nowrap;
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    min-width: 120px;
+    width: 100%;
+}
+
 .btn {
     padding: 0.75rem 2rem;
     border: none;
@@ -589,6 +660,8 @@ body {
     transition: all 0.3s ease;
     text-decoration: none;
     display: inline-block;
+    white-space: nowrap;
+    min-width: fit-content;
 }
 
 .btn.primary {
@@ -1901,28 +1974,75 @@ class GomokuGame {
     
     async loadUserGreeting() {
         try {
-            const userId = this.getCurrentUserId();
-            const response = await fetch(\`/api/user/profile/\${userId}\`);
-            const data = await response.json();
-            
-            const greetingEl = document.getElementById('user-greeting');
-            if (greetingEl) {
-                if (data.user && data.user.username) {
-                    // 如果是已註冊用戶，顯示用戶名
-                    greetingEl.textContent = \`您好，\${data.user.username}\`;
+            const token = localStorage.getItem('authToken');
+            if (token) {
+                // 如果有 token，嘗試獲取用戶信息
+                const response = await fetch('/api/user/me', {
+                    headers: getAuthHeaders()
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    const greetingEl = document.getElementById('user-greeting');
+                    if (greetingEl && data.user) {
+                        greetingEl.textContent = \`您好，\${data.user.username}\`;
+                    }
+                    // 更新個人資料卡片
+                    this.updateProfileCard(data.user);
                 } else {
-                    // 如果是匿名用戶，顯示匿名ID
-                    const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
-                    greetingEl.textContent = \`您好，\${anonymousId}\`;
+                    // Token 無效，清除本地存儲
+                    localStorage.removeItem('userId');
+                    localStorage.removeItem('username');
+                    localStorage.removeItem('authToken');
+                    this.showGuestProfile();
                 }
+            } else {
+                this.showGuestProfile();
             }
         } catch (error) {
             console.error('載入用戶問候語失敗:', error);
-            const greetingEl = document.getElementById('user-greeting');
-            if (greetingEl) {
-                const userId = this.getCurrentUserId();
-                const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
-                greetingEl.textContent = \`您好，\${anonymousId}\`;
+            this.showGuestProfile();
+        }
+    }
+    
+    showGuestProfile() {
+        const greetingEl = document.getElementById('user-greeting');
+        if (greetingEl) {
+            const userId = this.getCurrentUserId();
+            const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
+            greetingEl.textContent = \`您好，\${anonymousId}\`;
+        }
+        this.updateProfileCard(null);
+    }
+    
+    updateProfileCard(user) {
+        const profileDescription = document.getElementById('profile-description');
+        const profileButton = document.getElementById('profile-button');
+        const headerLogoutBtn = document.querySelector('.header-logout-btn');
+        
+        if (user) {
+            // 已登入用戶
+            profileDescription.innerHTML = \`
+                <p>歡迎回來，<strong>\${user.username}</strong>！</p>
+                <div class="user-stats">
+                    <p>評分：<strong>\${user.rating}</strong></p>
+                    <p>勝率：<strong>\${user.wins + user.losses + user.draws > 0 ? 
+                        ((user.wins / (user.wins + user.losses + user.draws)) * 100).toFixed(1) + '%' : '0%'}</strong></p>
+                </div>
+            \`;
+            profileButton.innerHTML = \`
+                <button class="btn secondary" onclick="window.location.href='/profile'">查看資料</button>
+                <button class="btn warning" onclick="showChangePasswordModal()">更改密碼</button>
+            \`;
+            if (headerLogoutBtn) {
+                headerLogoutBtn.style.display = 'inline-block';
+            }
+        } else {
+            // 未登入用戶
+            profileDescription.textContent = '管理帳號和戰績';
+            profileButton.innerHTML = '<button class="btn secondary" onclick="showLoginModal()">登入/註冊</button>';
+            if (headerLogoutBtn) {
+                headerLogoutBtn.style.display = 'none';
             }
         }
     }
@@ -2112,6 +2232,98 @@ class GomokuGame {
 
 // 全域函數
 let game = new GomokuGame();
+
+// 獲取認證標頭
+function getAuthHeaders() {
+    const token = localStorage.getItem('authToken');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+        headers['Authorization'] = \`Bearer \${token}\`;
+    }
+    return headers;
+}
+
+// 直接載入用戶問候語的函數
+async function loadUserGreetingDirectly() {
+    try {
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            // 如果有 token，嘗試獲取用戶信息
+            const response = await fetch('/api/user/me', {
+                headers: getAuthHeaders()
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const greetingEl = document.getElementById('user-greeting');
+                if (greetingEl && data.user) {
+                    greetingEl.textContent = \`您好，\${data.user.username}\`;
+                }
+                // 更新個人資料卡片
+                updateProfileCardDirectly(data.user);
+            } else {
+                // Token 無效，清除本地存儲
+                localStorage.removeItem('userId');
+                localStorage.removeItem('username');
+                localStorage.removeItem('authToken');
+                showGuestProfileDirectly();
+            }
+        } else {
+            showGuestProfileDirectly();
+        }
+    } catch (error) {
+        console.error('載入用戶問候語失敗:', error);
+        showGuestProfileDirectly();
+    }
+}
+
+// 直接更新個人資料卡片的函數
+function updateProfileCardDirectly(user) {
+    const profileDescription = document.getElementById('profile-description');
+    const profileButton = document.getElementById('profile-button');
+    const headerLogoutBtn = document.querySelector('.header-logout-btn');
+    
+    if (user) {
+        // 已登入用戶
+        profileDescription.innerHTML = \`
+            <p>歡迎回來，<strong>\${user.username}</strong>！</p>
+            <div class="user-stats">
+                <p>評分：<strong>\${user.rating}</strong></p>
+                <p>勝率：<strong>\${user.wins + user.losses + user.draws > 0 ? 
+                    ((user.wins / (user.wins + user.losses + user.draws)) * 100).toFixed(1) + '%' : '0%'}</strong></p>
+            </div>
+        \`;
+        profileButton.innerHTML = \`
+            <button class="btn secondary" onclick="window.location.href='/profile'">查看資料</button>
+            <button class="btn warning" onclick="showChangePasswordModal()">更改密碼</button>
+        \`;
+        if (headerLogoutBtn) {
+            headerLogoutBtn.style.display = 'inline-block';
+        }
+    } else {
+        // 未登入用戶
+        profileDescription.textContent = '管理帳號和戰績';
+        profileButton.innerHTML = '<button class="btn secondary" onclick="showLoginModal()">登入/註冊</button>';
+        if (headerLogoutBtn) {
+            headerLogoutBtn.style.display = 'none';
+        }
+    }
+}
+
+// 直接顯示訪客資料的函數
+function showGuestProfileDirectly() {
+    const greetingEl = document.getElementById('user-greeting');
+    if (greetingEl) {
+        let userId = localStorage.getItem('userId');
+        if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('userId', userId);
+        }
+        const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
+        greetingEl.textContent = \`您好，\${anonymousId}\`;
+    }
+    updateProfileCardDirectly(null);
+}
 
 function changeDifficulty() {
     const select = document.getElementById('ai-difficulty');
@@ -2468,12 +2680,81 @@ document.addEventListener('DOMContentLoaded', function() {
                     localStorage.setItem('authToken', data.token);
                     hideLoginModal();
                     alert(\`\${isLogin ? '登入' : '註冊'}成功！\`);
+                    
+                    // 重新載入用戶問候語和更新個人資料卡片
+                    setTimeout(() => {
+                        if (typeof game !== 'undefined' && game.loadUserGreeting) {
+                            game.loadUserGreeting();
+                        } else {
+                            // 如果 game 對象還不可用，直接調用相關函數
+                            loadUserGreetingDirectly();
+                        }
+                    }, 100);
                 } else {
                     alert(data.error || \`\${isLogin ? '登入' : '註冊'}失敗\`);
                 }
             } catch (error) {
                 console.error(\`\${isLogin ? '登入' : '註冊'}失敗:\`, error);
                 alert(\`\${isLogin ? '登入' : '註冊'}失敗\`);
+            }
+        });
+    }
+    
+    // 更改密碼表單處理
+    const changePasswordForm = document.getElementById('change-password-form');
+    if (changePasswordForm) {
+        changePasswordForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            
+            // 驗證新密碼
+            if (newPassword !== confirmPassword) {
+                alert('新密碼和確認密碼不一致');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                alert('新密碼至少需要 6 個字符');
+                return;
+            }
+            
+            // 檢查密碼強度
+            const hasLetter = /[a-zA-Z]/.test(newPassword);
+            const hasNumber = /\d/.test(newPassword);
+            
+            if (!hasLetter) {
+                alert('新密碼必須包含至少一個字母');
+                return;
+            }
+            
+            if (!hasNumber) {
+                alert('新密碼必須包含至少一個數字');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/user/change-password', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        currentPassword,
+                        newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    alert('密碼更改成功！');
+                    hideChangePasswordModal();
+                } else {
+                    alert(data.error || '密碼更改失敗');
+                }
+            } catch (error) {
+                console.error('更改密碼失敗:', error);
+                alert('更改密碼失敗');
             }
         });
     }
@@ -2487,21 +2768,29 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.href = '/';
         }
     };
+    
+    // 顯示更改密碼彈窗
+    window.showChangePasswordModal = function() {
+        const modal = document.getElementById('change-password-modal');
+        if (modal) {
+            modal.style.display = 'flex';
+        }
+    };
+    
+    // 隱藏更改密碼彈窗
+    window.hideChangePasswordModal = function() {
+        const modal = document.getElementById('change-password-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            // 清空表單
+            document.getElementById('change-password-form').reset();
+        }
+    };
 });`;
 }
 
 function getUtilsJS(): string {
   return `// 工具函數
-
-// 獲取認證標頭
-function getAuthHeaders() {
-    const token = localStorage.getItem('authToken');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-        headers['Authorization'] = \`Bearer \${token}\`;
-    }
-    return headers;
-}
 
 // CORS 標頭
 export const corsHeaders = {
