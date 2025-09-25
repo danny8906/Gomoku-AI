@@ -45,6 +45,9 @@ export async function serveStaticAssets(request: Request, env: Env): Promise<Res
         headers: { 'Content-Type': 'text/css; charset=utf-8' }
       });
     
+    case '/favicon.ico':
+      return new Response('', { status: 204 });
+    
     
     default:
       return new Response('Not found', { status: 404 });
@@ -139,12 +142,18 @@ function getIndexHTML(): string {
                     <span class="close" onclick="hideLoginModal()">&times;</span>
                     <h3 id="auth-title">登入</h3>
                     <form id="auth-form">
-                        <input type="text" id="username" placeholder="用戶名" required>
-                        <input type="email" id="email" placeholder="電子郵件 (註冊時需要)" style="display: none;">
-                        <input type="password" id="password" placeholder="密碼" required>
+                        <div class="form-group">
+                            <input type="text" id="username" class="form-input" placeholder="用戶名" required>
+                        </div>
+                        <div class="form-group" id="email-group" style="display: none;">
+                            <input type="email" id="email" class="form-input" placeholder="電子郵件 (註冊時需要)" style="display: none;">
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="password" class="form-input" placeholder="密碼" required>
+                        </div>
                         <button type="submit" class="btn primary">登入</button>
                     </form>
-                    <p>
+                    <p style="margin-top: var(--spacing-4); text-align: center;">
                         <span id="auth-switch-text">還沒有帳號？</span>
                         <a href="#" id="auth-switch" onclick="toggleAuthMode()">註冊</a>
                     </p>
@@ -156,9 +165,15 @@ function getIndexHTML(): string {
                     <span class="close" onclick="hideChangePasswordModal()">&times;</span>
                     <h3>更改密碼</h3>
                     <form id="change-password-form">
-                        <input type="password" id="current-password" placeholder="當前密碼" required>
-                        <input type="password" id="new-password" placeholder="新密碼" required>
-                        <input type="password" id="confirm-password" placeholder="確認新密碼" required>
+                        <div class="form-group">
+                            <input type="password" id="current-password" class="form-input" placeholder="當前密碼" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="new-password" class="form-input" placeholder="新密碼" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="confirm-password" class="form-input" placeholder="確認新密碼" required>
+                        </div>
                         <button type="submit" class="btn primary">更改密碼</button>
                     </form>
                 </div>
@@ -521,8 +536,10 @@ function getStylesCSS(): string {
     --color-secondary-light: #a0aec0;
     
     --color-success: #38a169;
+    --color-success-light: #c6f6d5;
     --color-warning: #d69e2e;
     --color-danger: #e53e3e;
+    --color-danger-light: #fed7d7;
     --color-info: #3182ce;
     
     --color-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -645,6 +662,8 @@ body {
     border-bottom: 1px solid var(--color-border);
     border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
     margin: var(--spacing-4) var(--spacing-4) 0 var(--spacing-4);
+    position: relative;
+    z-index: 100;
 }
 
 .header h1 {
@@ -856,6 +875,7 @@ body {
     opacity: 0;
     transition: opacity var(--transition-normal);
     pointer-events: none;
+    z-index: -1;
 }
 
 .feature-grid .feature-card:hover::after {
@@ -884,6 +904,7 @@ body {
     background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
     opacity: 0;
     transition: opacity var(--transition-normal);
+    z-index: -1;
 }
 
 .card:hover {
@@ -1088,6 +1109,7 @@ body {
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
     color: var(--color-text-white);
     box-shadow: var(--shadow-md);
+    margin-top: var(--spacing-2);
 }
 
 .btn.primary:hover:not(:disabled) {
@@ -1171,9 +1193,18 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 1000;
+    z-index: 99999;
     backdrop-filter: blur(4px);
     animation: modalFadeIn var(--transition-normal);
+    overflow: hidden;
+    isolation: isolate;
+}
+
+/* 防止背景滾動 */
+body.modal-open {
+    overflow: hidden;
+    position: relative;
+    height: 100vh;
 }
 
 @keyframes modalFadeIn {
@@ -1189,14 +1220,15 @@ body {
 
 .modal-content {
     background: var(--color-surface);
-    padding: var(--spacing-8);
+    padding: var(--spacing-6);
     border-radius: var(--radius-4xl);
     box-shadow: var(--shadow-2xl);
-    max-width: 500px;
+    max-width: 480px;
     width: 90%;
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
+    z-index: 100000;
     animation: modalSlideIn var(--transition-normal);
     border: 1px solid var(--color-border);
 }
@@ -1873,29 +1905,197 @@ body {
     color: var(--color-text-primary);
 }
 
+/* 優化的表單輸入樣式 */
 .form-input {
-    padding: var(--spacing-3);
+    width: 100%;
+    padding: var(--spacing-3) var(--spacing-4);
     border: 2px solid var(--color-border);
     border-radius: var(--radius-2xl);
     font-size: var(--font-size-base);
     font-family: inherit;
-    transition: all var(--transition-fast);
+    font-weight: var(--font-weight-medium);
+    transition: all var(--transition-normal);
     background: var(--color-surface);
     color: var(--color-text-primary);
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    margin-bottom: 0;
+    box-sizing: border-box;
+    min-height: 44px;
 }
 
 .form-input:focus {
     outline: none;
-    border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px var(--color-shadow-focus);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 4px rgba(66, 153, 225, 0.1), var(--shadow-lg);
+    transform: translateY(-1px);
+    background: var(--color-surface-hover);
+}
+
+.form-input:hover:not(:focus) {
+    border-color: var(--color-border-hover);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
 }
 
 .form-input:invalid {
     border-color: var(--color-danger);
+    box-shadow: 0 0 0 4px rgba(229, 62, 62, 0.1);
+}
+
+.form-input:valid:not(:placeholder-shown) {
+    border-color: var(--color-success);
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1);
 }
 
 .form-input::placeholder {
     color: var(--color-text-muted);
+    font-weight: var(--font-weight-normal);
+    transition: all var(--transition-fast);
+}
+
+.form-input:focus::placeholder {
+    color: var(--color-text-muted);
+    transform: translateY(-2px);
+    font-size: var(--font-size-sm);
+}
+
+/* 登入/註冊表單特殊樣式 */
+#auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    margin-bottom: var(--spacing-6);
+}
+
+#auth-form input {
+    position: relative;
+    padding-left: var(--spacing-12);
+    background-image: none;
+    background-repeat: no-repeat;
+    background-position: var(--spacing-4) center;
+    background-size: 20px 20px;
+}
+
+#username {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: var(--spacing-4) center;
+    background-size: 20px 20px;
+    padding-left: var(--spacing-12);
+    padding-right: var(--spacing-4);
+}
+
+#email {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: var(--spacing-4) center;
+    background-size: 20px 20px;
+    padding-left: var(--spacing-12);
+    padding-right: var(--spacing-4);
+}
+
+#password {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: var(--spacing-4) center;
+    background-size: 20px 20px;
+    padding-left: var(--spacing-12);
+    padding-right: var(--spacing-4);
+}
+
+
+/* 表單驗證狀態 */
+.form-group {
+    position: relative;
+    margin-bottom: var(--spacing-4);
+    min-height: 60px;
+}
+
+.form-group.error input {
+    border-color: var(--color-danger);
+    box-shadow: 0 0 0 4px rgba(229, 62, 62, 0.1);
+}
+
+.form-group.success input {
+    border-color: var(--color-success);
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1);
+}
+
+.form-error {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    background: var(--color-danger-light);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-danger);
+    animation: slideDown var(--transition-normal);
+    z-index: 1000;
+    box-shadow: var(--shadow-md);
+}
+
+.form-success {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    color: var(--color-success);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-1);
+    padding: var(--spacing-2);
+    background: var(--color-success-light);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-success);
+    animation: slideDown var(--transition-normal);
+    z-index: 1000;
+    box-shadow: var(--shadow-md);
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 輸入框動畫效果 */
+.form-input:focus {
+    animation: inputFocus var(--transition-normal);
+}
+
+@keyframes inputFocus {
+    0% {
+        transform: translateY(0) scale(1);
+    }
+    50% {
+        transform: translateY(-2px) scale(1.02);
+    }
+    100% {
+        transform: translateY(-1px) scale(1);
+    }
+}
+
+/* 響應式設計 */
+@media (max-width: 768px) {
+    .form-input {
+        padding: var(--spacing-3) var(--spacing-4);
+        font-size: var(--font-size-sm);
+    }
+    
+    #auth-form input {
+        padding-left: var(--spacing-10);
+        background-size: 18px 18px;
+        background-position: var(--spacing-3) center;
+    }
 }
 
 .form-select {
@@ -2503,7 +2703,7 @@ class GomokuGame {
             padding: 1rem 1.5rem;
             border-radius: 12px;
             box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
-            z-index: 1000;
+            z-index: 100;
             animation: slideIn 0.3s ease;
             max-width: 300px;
         \`;
@@ -2918,6 +3118,7 @@ class GomokuGame {
         
         // 顯示彈窗
         modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
         console.log('遊戲結束彈窗已顯示');
         
         // 直接綁定按鈕事件
@@ -3395,7 +3596,7 @@ function changeDifficulty() {
             padding: 1rem 1.5rem;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 1000;
+            z-index: 100;
             font-weight: 600;
             animation: slideIn 0.3s ease;
         \`;
@@ -3438,11 +3639,15 @@ function startAIGame() {
 }
 
 function showRoomOptions() {
-    document.getElementById('room-options').style.display = 'flex';
+    const modal = document.getElementById('room-options');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
 }
 
 function hideRoomOptions() {
-    document.getElementById('room-options').style.display = 'none';
+    const modal = document.getElementById('room-options');
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
 }
 
 function createRoom() {
@@ -3461,15 +3666,20 @@ function joinRoom() {
 }
 
 function showLoginModal() {
-    document.getElementById('login-modal').style.display = 'flex';
+    const modal = document.getElementById('login-modal');
+    modal.style.display = 'flex';
+    document.body.classList.add('modal-open');
 }
 
 function hideLoginModal() {
-    document.getElementById('login-modal').style.display = 'none';
+    const modal = document.getElementById('login-modal');
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
 }
 
 function toggleAuthMode() {
     const title = document.getElementById('auth-title');
+    const emailGroup = document.getElementById('email-group');
     const emailField = document.getElementById('email');
     const switchText = document.getElementById('auth-switch-text');
     const switchLink = document.getElementById('auth-switch');
@@ -3477,12 +3687,14 @@ function toggleAuthMode() {
     
     if (title.textContent === '登入') {
         title.textContent = '註冊';
+        emailGroup.style.display = 'block';
         emailField.style.display = 'block';
         switchText.textContent = '已有帳號？';
         switchLink.textContent = '登入';
         submitBtn.textContent = '註冊';
     } else {
         title.textContent = '登入';
+        emailGroup.style.display = 'none';
         emailField.style.display = 'none';
         switchText.textContent = '還沒有帳號？';
         switchLink.textContent = '註冊';
@@ -3490,11 +3702,86 @@ function toggleAuthMode() {
     }
 }
 
+
+// 表單驗證功能
+function validateForm(input) {
+    const formGroup = input.closest('.form-group');
+    const value = input.value.trim();
+    let isValid = true;
+    let errorMessage = '';
+
+    // 清除之前的驗證狀態
+    formGroup.classList.remove('error', 'success');
+    const existingError = formGroup.querySelector('.form-error');
+    if (existingError) {
+        existingError.remove();
+    }
+    
+    // 確保沒有殘留的錯誤訊息
+    const errorMessages = formGroup.querySelectorAll('.form-error');
+    errorMessages.forEach(msg => msg.remove());
+
+    // 根據輸入類型進行驗證
+    switch (input.type) {
+        case 'email':
+            // 更寬鬆的電子郵件驗證，支援更多格式
+            const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+            if (value && value.length > 0) {
+                // 先檢查 HTML5 驗證
+                if (input.validity && input.validity.valid === false) {
+                    isValid = false;
+                    errorMessage = '請輸入有效的電子郵件地址';
+                } else if (!emailRegex.test(value)) {
+                    isValid = false;
+                    errorMessage = '請輸入有效的電子郵件地址';
+                }
+            }
+            break;
+        case 'password':
+            if (value && value.length < 6) {
+                isValid = false;
+                errorMessage = '密碼至少需要6個字符';
+            }
+            break;
+        case 'text':
+            if (input.id === 'username') {
+                if (value && value.length < 3) {
+                    isValid = false;
+                    errorMessage = '用戶名至少需要3個字符';
+                }
+            }
+            break;
+    }
+
+    // 特殊驗證：確認密碼
+    if (input.id === 'confirm-password') {
+        const newPassword = document.getElementById('new-password');
+        if (value && value !== newPassword.value) {
+            isValid = false;
+            errorMessage = '密碼確認不匹配';
+        }
+    }
+
+    // 只顯示錯誤訊息，不顯示成功提示
+    if (value && value.length > 0 && !isValid) {
+        formGroup.classList.add('error');
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'form-error';
+        errorDiv.textContent = errorMessage;
+        formGroup.appendChild(errorDiv);
+    } else if (isValid) {
+        formGroup.classList.add('success');
+    }
+
+    return isValid;
+}
+
 function restartGame() {
     // 隱藏彈窗
     const modal = document.getElementById('game-over-modal');
     if (modal) {
         modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
     }
     
     // 檢查當前頁面類型
@@ -3524,6 +3811,7 @@ function returnToHome() {
     const modal = document.getElementById('game-over-modal');
     if (modal) {
         modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
     }
     
     // 如果在房間中，先發送離開訊息
@@ -3550,6 +3838,7 @@ function analyzeGame() {
     const modal = document.getElementById('game-over-modal');
     if (modal) {
         modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
     }
     
     // 顯示分析面板
@@ -3605,6 +3894,7 @@ function leaveRoom() {
     const modal = document.getElementById('game-over-modal');
     if (modal) {
         modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
     }
     
     if (confirm('確定要離開房間嗎？')) {
@@ -3696,10 +3986,43 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // 表單驗證事件監聽器
+    const authForm = document.getElementById('auth-form');
+    if (authForm) {
+        const inputs = authForm.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.addEventListener('blur', function() {
+                validateForm(this);
+            });
+            input.addEventListener('input', function() {
+                // 清除錯誤狀態當用戶開始輸入
+                const formGroup = this.closest('.form-group');
+                formGroup.classList.remove('error');
+                const errorDiv = formGroup.querySelector('.form-error');
+                if (errorDiv) errorDiv.remove();
+            });
+        });
+    }
+
+    // 更改密碼表單驗證
+    const changePasswordForm = document.getElementById('change-password-form');
+    if (changePasswordForm) {
+        const inputs = changePasswordForm.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.addEventListener('blur', function() {
+                validateForm(this);
+            });
+            input.addEventListener('input', function() {
+                const formGroup = this.closest('.form-group');
+                formGroup.classList.remove('error');
+                const errorDiv = formGroup.querySelector('.form-error');
+                if (errorDiv) errorDiv.remove();
+            });
+        });
+    }
     
     // 移除事件委託，改用直接綁定
-    
-    const authForm = document.getElementById('auth-form');
     if (authForm) {
         authForm.addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -3747,7 +4070,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // 更改密碼表單處理
-    const changePasswordForm = document.getElementById('change-password-form');
     if (changePasswordForm) {
         changePasswordForm.addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -3820,6 +4142,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const modal = document.getElementById('change-password-modal');
         if (modal) {
             modal.style.display = 'flex';
+            document.body.classList.add('modal-open');
         }
     };
     
@@ -3828,6 +4151,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const modal = document.getElementById('change-password-modal');
         if (modal) {
             modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
             // 清空表單
             document.getElementById('change-password-form').reset();
         }
