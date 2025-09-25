@@ -7,10 +7,17 @@ import { Env } from './types';
 import { handleGameAPI } from './handlers/game';
 import { handleUserAPI } from './handlers/user';
 import { handleRoomAPI } from './handlers/room';
+import { handleAdminAPI } from './handlers/admin';
 import { serveStaticAssets } from './handlers/static';
+import { handleHourlyCleanup } from './handlers/cron';
 import { corsHeaders } from './utils/cors';
 
 export { GameRoom } from './durable-objects/GameRoom';
+
+// Cron Job 處理器
+export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+  await handleHourlyCleanup(env, ctx);
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -37,6 +44,10 @@ export default {
       
       if (path.startsWith('/api/room')) {
         return await handleRoomAPI(request, env, ctx);
+      }
+      
+      if (path.startsWith('/api/admin')) {
+        return await handleAdminAPI(request, env, ctx);
       }
 
       // 靜態資源和前端頁面

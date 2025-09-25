@@ -41,3 +41,7 @@ name = "gomoku-cf-dev"
 [observability]
 enabled = true
 head_sampling_rate = 1 # optional. default = 1.
+
+# Cron Jobs - 定期清理任務
+[triggers]
+crons = ["0 * * * *"]

@@ -21,6 +21,14 @@ export async function handleRoomAPI(
       if (path === '/join') {
         return handleJoinRoom(request, env);
       }
+      if (path.includes('/cleanup')) {
+        // 處理手動清理：/ROOMCODE/cleanup
+        const pathParts = path.split('/');
+        const roomCode = pathParts[1];
+        if (roomCode && roomCode.length === 4) {
+          return handleForceCleanup(roomCode, env);
+        }
+      }
       break;
 
     case 'GET':
@@ -30,6 +38,13 @@ export async function handleRoomAPI(
         const roomCode = pathParts[1]; // 第一個部分是房間代碼
         if (roomCode && roomCode.length === 4) {
           return handleWebSocket(request, env, roomCode);
+        }
+      } else if (path.includes('/stats')) {
+        // 處理房間統計：/ROOMCODE/stats
+        const pathParts = path.split('/');
+        const roomCode = pathParts[1];
+        if (roomCode && roomCode.length === 4) {
+          return handleGetRoomStats(roomCode, env);
         }
       } else if (path.startsWith('/')) {
         const roomCode = path.substring(1);
@@ -311,6 +326,86 @@ export async function handleWebSocket(
     return new Response('WebSocket connection failed', { 
       status: 500,
       headers: corsHeaders
+    });
+  }
+}
+
+/**
+ * 獲取房間統計信息
+ */
+async function handleGetRoomStats(roomCode: string, env: Env): Promise<Response> {
+  try {
+    // 獲取 Durable Object 實例
+    const id = env.GAME_ROOM.idFromName(roomCode);
+    const gameRoom = env.GAME_ROOM.get(id);
+
+    // 獲取房間統計
+    const response = await gameRoom.fetch(new Request('http://localhost/stats'));
+
+    if (!response.ok) {
+      throw new Error('獲取房間統計失敗');
+    }
+
+    const result = await response.json();
+
+    return new Response(JSON.stringify(result), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('獲取房間統計失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '獲取房間統計失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  }
+}
+
+/**
+ * 手動觸發房間清理
+ */
+async function handleForceCleanup(roomCode: string, env: Env): Promise<Response> {
+  try {
+    // 獲取 Durable Object 實例
+    const id = env.GAME_ROOM.idFromName(roomCode);
+    const gameRoom = env.GAME_ROOM.get(id);
+
+    // 觸發清理
+    const response = await gameRoom.fetch(new Request('http://localhost/cleanup', {
+      method: 'POST'
+    }));
+
+    if (!response.ok) {
+      throw new Error('觸發房間清理失敗');
+    }
+
+    const result = await response.json();
+
+    return new Response(JSON.stringify(result), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('觸發房間清理失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '觸發房間清理失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
     });
   }
 }
