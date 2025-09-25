@@ -64,7 +64,7 @@ function getIndexHTML(): string {
     <div id="app">
         <header class="header">
             <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
-            <p>支援 AI 對戰和玩家對戰</p>
+            <p id="user-greeting">載入中...</p>
         </header>
         
         <main class="main">
@@ -1092,7 +1092,10 @@ class GomokuGame {
         // 根據當前頁面初始化
         const path = window.location.pathname;
         
-        if (path === '/game') {
+        // 如果是首頁，載入用戶問候語
+        if (path === '/') {
+            this.loadUserGreeting();
+        } else if (path === '/game') {
             this.initGamePage();
         } else if (path === '/room') {
             this.initRoomPage();
@@ -1891,6 +1894,34 @@ class GomokuGame {
             localStorage.setItem('userId', userId);
         }
         return userId;
+    }
+    
+    async loadUserGreeting() {
+        try {
+            const userId = this.getCurrentUserId();
+            const response = await fetch(\`/api/user/profile/\${userId}\`);
+            const data = await response.json();
+            
+            const greetingEl = document.getElementById('user-greeting');
+            if (greetingEl) {
+                if (data.user && data.user.username) {
+                    // 如果是已註冊用戶，顯示用戶名
+                    greetingEl.textContent = \`您好，\${data.user.username}\`;
+                } else {
+                    // 如果是匿名用戶，顯示匿名ID
+                    const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
+                    greetingEl.textContent = \`您好，\${anonymousId}\`;
+                }
+            }
+        } catch (error) {
+            console.error('載入用戶問候語失敗:', error);
+            const greetingEl = document.getElementById('user-greeting');
+            if (greetingEl) {
+                const userId = this.getCurrentUserId();
+                const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
+                greetingEl.textContent = \`您好，\${anonymousId}\`;
+            }
+        }
     }
     
     async loadProfile() {
