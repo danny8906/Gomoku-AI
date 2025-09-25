@@ -305,6 +305,11 @@ function getRoomHTML(): string {
                     <h2>等待玩家加入...</h2>
                     <p>分享房間代碼給朋友：<strong id="share-code">----</strong></p>
                     <div class="loading">⏳</div>
+                    <div class="waiting-controls">
+                        <button class="btn secondary" onclick="goHome()">
+                            <span>🏠</span> 返回首頁
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="game-area" id="game-area" style="display: none;">
@@ -1661,6 +1666,13 @@ body {
     color: var(--color-text-muted);
 }
 
+.waiting-controls {
+    margin-top: var(--spacing-6);
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-4);
+}
+
 @keyframes pulse {
     0%, 100% { 
         opacity: 1; 
@@ -2133,6 +2145,7 @@ class GomokuGame {
         this.myPlayer = null;
         this.websocket = null;
         this.aiDifficulty = 'medium'; // 默認中等難度
+        this.lastMove = null; // 追蹤最後一步
         
         this.init();
     }
@@ -2346,6 +2359,11 @@ class GomokuGame {
             case 'gameState':
                 if (message.data) {
                     this.gameState = message.data;
+                    // 追蹤最後一步
+                    if (this.gameState.moves && this.gameState.moves.length > 0) {
+                        const lastMove = this.gameState.moves[this.gameState.moves.length - 1];
+                        this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
+                    }
                     this.updateGameDisplay();
                     this.drawBoard();
                     
@@ -2519,6 +2537,11 @@ class GomokuGame {
                 this.gameState = data.gameState;
                 this.myPlayer = 'black'; // 玩家總是黑棋
                 this.isMyTurn = this.gameState.currentPlayer === this.myPlayer;
+                // 追蹤最後一步
+                if (this.gameState.moves && this.gameState.moves.length > 0) {
+                    const lastMove = this.gameState.moves[this.gameState.moves.length - 1];
+                    this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
+                }
                 this.updateGameDisplay();
             }
         } catch (error) {
@@ -2533,6 +2556,11 @@ class GomokuGame {
             
             if (data.gameState) {
                 this.gameState = data.gameState;
+                // 追蹤最後一步
+                if (this.gameState.moves && this.gameState.moves.length > 0) {
+                    const lastMove = this.gameState.moves[this.gameState.moves.length - 1];
+                    this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
+                }
                 this.updateGameDisplay();
                 this.drawBoard();
             }
@@ -2561,6 +2589,11 @@ class GomokuGame {
             if (data.gameState) {
                 this.gameState = data.gameState;
                 this.isMyTurn = false;
+                // 追蹤最後一步
+                if (this.gameState.moves && this.gameState.moves.length > 0) {
+                    const lastMove = this.gameState.moves[this.gameState.moves.length - 1];
+                    this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
+                }
                 this.updateGameDisplay();
                 this.drawBoard();
                 
@@ -2589,6 +2622,11 @@ class GomokuGame {
             if (data.gameState) {
                 this.gameState = data.gameState;
                 this.isMyTurn = this.gameState.currentPlayer === this.myPlayer;
+                // 追蹤最後一步
+                if (this.gameState.moves && this.gameState.moves.length > 0) {
+                    const lastMove = this.gameState.moves[this.gameState.moves.length - 1];
+                    this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
+                }
                 this.updateGameDisplay();
                 this.drawBoard();
                 
@@ -2708,6 +2746,9 @@ class GomokuGame {
         const y = row * this.cellSize + this.cellSize/2;
         const radius = this.cellSize/2 - 2;
         
+        // 檢查是否是最後一步
+        const isLastMove = this.lastMove && this.lastMove.row === row && this.lastMove.col === col;
+        
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, 2 * Math.PI);
         
@@ -2718,9 +2759,28 @@ class GomokuGame {
         }
         
         ctx.fill();
-        ctx.strokeStyle = '#4A5568';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        
+        // 為最後一步添加高亮效果
+        if (isLastMove) {
+            // 繪製高亮圓圈
+            ctx.beginPath();
+            ctx.arc(x, y, radius + 4, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#FFD700'; // 金色高亮
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // 繪製內圈高亮
+            ctx.beginPath();
+            ctx.arc(x, y, radius - 2, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#FFA500'; // 橙色內圈
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        } else {
+            // 普通棋子邊框
+            ctx.strokeStyle = '#4A5568';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
     }
     
     updateGameDisplay() {
@@ -3201,10 +3261,23 @@ class GomokuGame {
             </tr>
         \`).join('');
     }
+    
+    // 返回首頁功能
+    goHome() {
+        if (this.websocket) {
+            this.websocket.close();
+        }
+        window.location.href = '/';
+    }
 }
 
 // 全域函數
 let game = new GomokuGame();
+
+// 返回首頁的全域函數
+window.goHome = function() {
+    game.goHome();
+};
 
 // 獲取認證標頭
 function getAuthHeaders() {
