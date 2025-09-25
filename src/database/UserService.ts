@@ -108,6 +108,35 @@ export class UserService {
   }
 
   /**
+   * 根據用戶名獲取用戶（包含密碼哈希）
+   */
+  async getUserByUsernameWithPassword(username: string): Promise<(User & { passwordHash?: string }) | null> {
+    try {
+      const result = await this.env.DB.prepare(`
+        SELECT * FROM users WHERE username = ?1
+      `).bind(username).first();
+
+      if (!result) return null;
+
+      return {
+        id: result.id as string,
+        username: result.username as string,
+        email: result.email as string | undefined,
+        passwordHash: result.password_hash as string | undefined,
+        wins: result.wins as number,
+        losses: result.losses as number,
+        draws: result.draws as number,
+        rating: result.rating as number,
+        createdAt: result.created_at as number,
+        updatedAt: result.updated_at as number
+      };
+    } catch (error) {
+      console.error('根據用戶名獲取用戶失敗:', error);
+      return null;
+    }
+  }
+
+  /**
    * 更新用戶戰績
    */
   async updateUserStats(

@@ -6,6 +6,140 @@ import { Env } from '../types';
 import { UserService } from '../database/UserService';
 import { corsHeaders } from '../utils/cors';
 
+/**
+ * 密碼強度驗證
+ */
+function validatePassword(password: string): { isValid: boolean; error?: string } {
+  if (!password) {
+    return { isValid: false, error: '密碼不能為空' };
+  }
+  
+  if (password.length < 6) {
+    return { isValid: false, error: '密碼至少需要 6 個字符' };
+  }
+  
+  if (password.length > 128) {
+    return { isValid: false, error: '密碼不能超過 128 個字符' };
+  }
+  
+  // 檢查是否包含至少一個字母和一個數字
+  const hasLetter = /[a-zA-Z]/.test(password);
+  const hasNumber = /\d/.test(password);
+  
+  if (!hasLetter) {
+    return { isValid: false, error: '密碼必須包含至少一個字母' };
+  }
+  
+  if (!hasNumber) {
+    return { isValid: false, error: '密碼必須包含至少一個數字' };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * 生成 JWT token
+ */
+async function generateJWT(userId: string, username: string, secret: string): Promise<string> {
+  const header = {
+    alg: 'HS256',
+    typ: 'JWT'
+  };
+  
+  const payload = {
+    sub: userId,
+    username: username,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 小時過期
+  };
+  
+  const encodedHeader = btoa(JSON.stringify(header));
+  const encodedPayload = btoa(JSON.stringify(payload));
+  
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    ),
+    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`)
+  );
+  
+  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+  return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
+}
+
+/**
+ * 驗證 JWT token
+ */
+async function verifyJWT(token: string, secret: string): Promise<{ valid: boolean; payload?: any }> {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+      return { valid: false };
+    }
+    
+    const [header, payload, signature] = parts;
+    
+    // 驗證簽名
+    const expectedSignature = await crypto.subtle.sign(
+      'HMAC',
+      await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      ),
+      new TextEncoder().encode(`${header}.${payload}`)
+    );
+    
+    const expectedSignatureB64 = btoa(String.fromCharCode(...new Uint8Array(expectedSignature)));
+    
+    if (signature !== expectedSignatureB64) {
+      return { valid: false };
+    }
+    
+    // 解析 payload
+    const decodedPayload = JSON.parse(atob(payload));
+    
+    // 檢查過期時間
+    if (decodedPayload.exp < Math.floor(Date.now() / 1000)) {
+      return { valid: false };
+    }
+    
+    return { valid: true, payload: decodedPayload };
+  } catch (error) {
+    return { valid: false };
+  }
+}
+
+/**
+ * 驗證 JWT token 並獲取用戶信息
+ */
+async function authenticateUser(request: Request, env: Env): Promise<{ userId: string; username: string } | null> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  
+  const token = authHeader.substring(7);
+  const verification = await verifyJWT(token, env.JWT_SECRET || 'default-secret');
+  
+  if (!verification.valid || !verification.payload) {
+    return null;
+  }
+  
+  return {
+    userId: verification.payload.sub,
+    username: verification.payload.username
+  };
+}
+
 export async function handleUserAPI(
   request: Request,
   env: Env,
@@ -43,6 +177,9 @@ export async function handleUserAPI(
       if (path === '/search') {
         return handleSearchUsers(request, env);
       }
+      if (path === '/me') {
+        return handleGetMe(request, env);
+      }
       break;
   }
 
@@ -75,6 +212,22 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
       });
     }
 
+    // 密碼強度驗證
+    if (password) {
+      const passwordValidation = validatePassword(password);
+      if (!passwordValidation.isValid) {
+        return new Response(JSON.stringify({ 
+          error: passwordValidation.error 
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        });
+      }
+    }
+
     const userService = new UserService(env);
     
     // 檢查用戶名是否已存在
@@ -100,6 +253,9 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
 
     const user = await userService.createUser(username, email, passwordHash);
 
+    // 生成 JWT token
+    const token = await generateJWT(user.id, user.username, env.JWT_SECRET || 'default-secret');
+
     return new Response(JSON.stringify({ 
       user: {
         id: user.id,
@@ -109,7 +265,8 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
         losses: user.losses,
         draws: user.draws,
         rating: user.rating
-      }
+      },
+      token
     }), {
       headers: {
         'Content-Type': 'application/json',
@@ -156,14 +313,52 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
       });
     }
 
-    // 簡單的密碼驗證（生產環境應使用更安全的方法）
+    // 密碼驗證
     if (password) {
       const passwordHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
         .then(buffer => Array.from(new Uint8Array(buffer))
           .map(b => b.toString(16).padStart(2, '0')).join(''));
       
-      // 這裡應該比較哈希值，但由於示例簡化，暫時跳過
+      // 從資料庫獲取用戶的密碼哈希
+      const userWithPassword = await userService.getUserByUsernameWithPassword(username);
+      if (!userWithPassword || !userWithPassword.passwordHash) {
+        return new Response(JSON.stringify({ 
+          error: '用戶不存在或未設置密碼' 
+        }), {
+          status: 404,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        });
+      }
+      
+      // 比較密碼哈希
+      if (passwordHash !== userWithPassword.passwordHash) {
+        return new Response(JSON.stringify({ 
+          error: '密碼錯誤' 
+        }), {
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders
+          }
+        });
+      }
+    } else {
+      return new Response(JSON.stringify({ 
+        error: '請輸入密碼' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
     }
+
+    // 生成 JWT token
+    const token = await generateJWT(user.id, user.username, env.JWT_SECRET || 'default-secret');
 
     return new Response(JSON.stringify({ 
       user: {
@@ -174,7 +369,8 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
         losses: user.losses,
         draws: user.draws,
         rating: user.rating
-      }
+      },
+      token
     }), {
       headers: {
         'Content-Type': 'application/json',
@@ -381,6 +577,70 @@ async function handleSearchUsers(request: Request, env: Env): Promise<Response> 
     console.error('搜索用戶失敗:', error);
     return new Response(JSON.stringify({ 
       error: '搜索用戶失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  }
+}
+
+/**
+ * 獲取當前用戶信息
+ */
+async function handleGetMe(request: Request, env: Env): Promise<Response> {
+  try {
+    const auth = await authenticateUser(request, env);
+    if (!auth) {
+      return new Response(JSON.stringify({ 
+        error: '未授權，請先登入' 
+      }), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    const userService = new UserService(env);
+    const user = await userService.getUserById(auth.userId);
+
+    if (!user) {
+      return new Response(JSON.stringify({ 
+        error: '用戶不存在' 
+      }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    return new Response(JSON.stringify({ 
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        wins: user.wins,
+        losses: user.losses,
+        draws: user.draws,
+        rating: user.rating
+      }
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('獲取用戶信息失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '獲取用戶信息失敗',
       message: error instanceof Error ? error.message : '未知錯誤'
     }), {
       status: 500,

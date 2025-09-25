@@ -368,7 +368,10 @@ function getProfileHTML(): string {
     <div id="app">
         <header class="header">
             <h1>👤 個人資料</h1>
-            <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
+            <div class="profile-actions">
+                <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
+                <button class="btn danger" onclick="logout()">登出</button>
+            </div>
         </header>
         
         <main class="profile-main">
@@ -1928,7 +1931,9 @@ class GomokuGame {
         const userId = this.getCurrentUserId();
         
         try {
-            const response = await fetch(\`/api/user/profile/\${userId}\`);
+            const response = await fetch(\`/api/user/profile/\${userId}\`, {
+                headers: getAuthHeaders()
+            });
             const data = await response.json();
             
             if (data.user) {
@@ -1936,7 +1941,9 @@ class GomokuGame {
             }
             
             // 載入統計數據
-            const statsResponse = await fetch(\`/api/user/stats/\${userId}\`);
+            const statsResponse = await fetch(\`/api/user/stats/\${userId}\`, {
+                headers: getAuthHeaders()
+            });
             const statsData = await statsResponse.json();
             
             if (statsData.stats) {
@@ -1944,7 +1951,9 @@ class GomokuGame {
             }
             
             // 載入遊戲歷史
-            const historyResponse = await fetch(\`/api/user/history/\${userId}\`);
+            const historyResponse = await fetch(\`/api/user/history/\${userId}\`, {
+                headers: getAuthHeaders()
+            });
             const historyData = await historyResponse.json();
             
             if (historyData.history) {
@@ -2453,9 +2462,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
                 
                 const data = await response.json();
-                if (data.user) {
+                if (data.user && data.token) {
                     localStorage.setItem('userId', data.user.id);
                     localStorage.setItem('username', data.user.username);
+                    localStorage.setItem('authToken', data.token);
                     hideLoginModal();
                     alert(\`\${isLogin ? '登入' : '註冊'}成功！\`);
                 } else {
@@ -2467,11 +2477,31 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // 登出功能
+    window.logout = function() {
+        if (confirm('確定要登出嗎？')) {
+            localStorage.removeItem('userId');
+            localStorage.removeItem('username');
+            localStorage.removeItem('authToken');
+            window.location.href = '/';
+        }
+    };
 });`;
 }
 
 function getUtilsJS(): string {
   return `// 工具函數
+
+// 獲取認證標頭
+function getAuthHeaders() {
+    const token = localStorage.getItem('authToken');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+        headers['Authorization'] = \`Bearer \${token}\`;
+    }
+    return headers;
+}
 
 // CORS 標頭
 export const corsHeaders = {
