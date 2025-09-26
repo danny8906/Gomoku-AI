@@ -59,7 +59,7 @@ function getIndexHTML(): string {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>OmniAI 五子棋 - Cloudflare Workers AI</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
@@ -195,7 +195,7 @@ function getGameHTML(): string {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>遊戲中 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
@@ -291,7 +291,7 @@ function getRoomHTML(): string {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>房間 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
@@ -396,7 +396,7 @@ function getProfileHTML(): string {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>個人資料 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
@@ -466,7 +466,7 @@ function getLeaderboardHTML(): string {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>排行榜 - OmniAI 五子棋</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
@@ -1306,6 +1306,8 @@ body.modal-open {
     border-radius: 10px;
     cursor: crosshair;
     background: #f7fafc;
+    touch-action: none; /* 防止觸控時的默認行為 */
+    user-select: none; /* 防止文本選擇 */
 }
 
 .game-sidebar {
@@ -1520,6 +1522,8 @@ body.modal-open {
         width: 100%;
         height: auto;
         max-width: 400px;
+        touch-action: none; /* 防止觸控時的默認行為 */
+        user-select: none; /* 防止文本選擇 */
     }
     
     .modal-content {
@@ -2337,6 +2341,7 @@ class GomokuGame {
         this.websocket = null;
         this.aiDifficulty = 'medium'; // 默認中等難度
         this.lastMove = null; // 追蹤最後一步
+        this.touchPreview = null; // 觸控預覽位置
         
         this.init();
     }
@@ -2363,7 +2368,11 @@ class GomokuGame {
         this.canvas = document.getElementById('game-board');
         if (this.canvas) {
             this.ctx = this.canvas.getContext('2d');
+            // 添加點擊和觸控事件支持
             this.canvas.addEventListener('click', (e) => this.handleBoardClick(e));
+            this.canvas.addEventListener('touchstart', (e) => this.handleBoardTouch(e), { passive: false });
+            this.canvas.addEventListener('touchmove', (e) => this.handleBoardTouch(e), { passive: false });
+            this.canvas.addEventListener('touchend', (e) => this.handleBoardTouch(e), { passive: false });
             this.drawBoard();
             
             // 從 URL 參數獲取遊戲模式和難度
@@ -2583,7 +2592,11 @@ class GomokuGame {
                         this.canvas = document.getElementById('game-board');
                         if (this.canvas) {
                             this.ctx = this.canvas.getContext('2d');
+                            // 添加點擊和觸控事件支持
                             this.canvas.addEventListener('click', (e) => this.handleRoomBoardClick(e));
+                            this.canvas.addEventListener('touchstart', (e) => this.handleRoomBoardTouch(e), { passive: false });
+                            this.canvas.addEventListener('touchmove', (e) => this.handleRoomBoardTouch(e), { passive: false });
+                            this.canvas.addEventListener('touchend', (e) => this.handleRoomBoardTouch(e), { passive: false });
                             this.drawBoard();
                         }
                         
@@ -2838,12 +2851,65 @@ class GomokuGame {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
-        const col = Math.floor(x / this.cellSize);
-        const row = Math.floor(y / this.cellSize);
+        // 考慮棋盤偏移，棋子中心在格子的中心位置
+        // 網格從 size/2 開始，所以需要調整計算
+        // 使用實際的格子大小（基於 Canvas 實際尺寸）
+        const actualCellSize = rect.width / this.boardSize;
+        const col = Math.round((x - actualCellSize/2) / actualCellSize);
+        const row = Math.round((y - actualCellSize/2) / actualCellSize);
         
         if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
             if (!this.gameState.board[row][col]) {
                 this.makeMove(row, col);
+            }
+        }
+    }
+    
+    handleBoardTouch(event) {
+        if (!this.isMyTurn) return;
+        
+        // 防止觸控時頁面滾動
+        event.preventDefault();
+        
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = event.changedTouches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
+        // 考慮棋盤偏移，棋子中心在格子的中心位置
+        // 網格從 size/2 開始，所以需要調整計算
+        // 使用實際的格子大小（基於 Canvas 實際尺寸）
+        const actualCellSize = rect.width / this.boardSize;
+        const col = Math.round((x - actualCellSize/2) / actualCellSize);
+        const row = Math.round((y - actualCellSize/2) / actualCellSize);
+        
+        if (event.type === 'touchstart') {
+            // 觸控開始時顯示預覽效果
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row][col]) {
+                    this.showTouchPreview(row, col);
+                }
+            }
+        } else if (event.type === 'touchmove') {
+            // 觸控移動時更新預覽位置
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row][col]) {
+                    this.showTouchPreview(row, col);
+                } else {
+                    this.hideTouchPreview();
+                }
+            } else {
+                this.hideTouchPreview();
+            }
+        } else if (event.type === 'touchend') {
+            // 觸控結束時執行落子
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row][col]) {
+                    this.hideTouchPreview();
+                    this.makeMove(row, col);
+                }
+            } else {
+                this.hideTouchPreview();
             }
         }
     }
@@ -2855,12 +2921,65 @@ class GomokuGame {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
-        const col = Math.floor(x / this.cellSize);
-        const row = Math.floor(y / this.cellSize);
+        // 考慮棋盤偏移，棋子中心在格子的中心位置
+        // 網格從 size/2 開始，所以需要調整計算
+        // 使用實際的格子大小（基於 Canvas 實際尺寸）
+        const actualCellSize = rect.width / this.boardSize;
+        const col = Math.round((x - actualCellSize/2) / actualCellSize);
+        const row = Math.round((y - actualCellSize/2) / actualCellSize);
         
         if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
             if (!this.gameState.board[row] || !this.gameState.board[row][col]) {
                 this.makeRoomMove(row, col);
+            }
+        }
+    }
+    
+    handleRoomBoardTouch(event) {
+        if (!this.isMyTurn || !this.myPlayer) return;
+        
+        // 防止觸控時頁面滾動
+        event.preventDefault();
+        
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = event.changedTouches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
+        // 考慮棋盤偏移，棋子中心在格子的中心位置
+        // 網格從 size/2 開始，所以需要調整計算
+        // 使用實際的格子大小（基於 Canvas 實際尺寸）
+        const actualCellSize = rect.width / this.boardSize;
+        const col = Math.round((x - actualCellSize/2) / actualCellSize);
+        const row = Math.round((y - actualCellSize/2) / actualCellSize);
+        
+        if (event.type === 'touchstart') {
+            // 觸控開始時顯示預覽效果
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row] || !this.gameState.board[row][col]) {
+                    this.showTouchPreview(row, col);
+                }
+            }
+        } else if (event.type === 'touchmove') {
+            // 觸控移動時更新預覽位置
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row] || !this.gameState.board[row][col]) {
+                    this.showTouchPreview(row, col);
+                } else {
+                    this.hideTouchPreview();
+                }
+            } else {
+                this.hideTouchPreview();
+            }
+        } else if (event.type === 'touchend') {
+            // 觸控結束時執行落子
+            if (row >= 0 && row < this.boardSize && col >= 0 && col < this.boardSize) {
+                if (!this.gameState.board[row] || !this.gameState.board[row][col]) {
+                    this.hideTouchPreview();
+                    this.makeRoomMove(row, col);
+                }
+            } else {
+                this.hideTouchPreview();
             }
         }
     }
@@ -2929,6 +3048,11 @@ class GomokuGame {
                 }
             }
         }
+        
+        // 繪製觸控預覽
+        if (this.touchPreview) {
+            this.drawTouchPreview(this.touchPreview.row, this.touchPreview.col);
+        }
     }
     
     drawPiece(row, col, player) {
@@ -2972,6 +3096,53 @@ class GomokuGame {
             ctx.lineWidth = 2;
             ctx.stroke();
         }
+    }
+    
+    showTouchPreview(row, col) {
+        // 只有當位置真正改變時才更新
+        if (!this.touchPreview || this.touchPreview.row !== row || this.touchPreview.col !== col) {
+            this.touchPreview = { row, col };
+            this.drawBoard(); // 重新繪製棋盤以顯示預覽
+        }
+    }
+    
+    hideTouchPreview() {
+        this.touchPreview = null;
+        this.drawBoard(); // 重新繪製棋盤以隱藏預覽
+    }
+    
+    drawTouchPreview(row, col) {
+        const ctx = this.ctx;
+        const x = col * this.cellSize + this.cellSize/2;
+        const y = row * this.cellSize + this.cellSize/2;
+        const radius = this.cellSize/2 - 2;
+        
+        // 繪製半透明的預覽棋子
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        
+        // 根據當前玩家顏色設置預覽顏色
+        if (this.myPlayer === 'black') {
+            ctx.fillStyle = 'rgba(45, 55, 72, 0.6)'; // 半透明黑色
+        } else {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; // 半透明白色
+        }
+        
+        ctx.fill();
+        
+        // 繪製預覽邊框
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        ctx.strokeStyle = '#FF6B6B'; // 紅色邊框
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        
+        // 繪製脈動效果
+        ctx.beginPath();
+        ctx.arc(x, y, radius + 8, 0, 2 * Math.PI);
+        ctx.strokeStyle = 'rgba(255, 107, 107, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
     }
     
     updateGameDisplay() {
