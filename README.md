@@ -2,6 +2,8 @@
 
 一個功能完整的 OmniAI 五子棋遊戲，運行在 Cloudflare Workers 平台上，整合了多項 AI 功能。
 
+🌐 **遊戲網址**: [https://gomoku-cf.omni-worker.workers.dev/](https://gomoku-cf.omni-worker.workers.dev/)
+
 ## ✨ 功能特色
 
 ### 🎮 遊戲模式
@@ -14,12 +16,11 @@
 - **Text Classification**: 自動判斷局面優劣勢和勝率
 - **Text Embeddings**: 局面相似度比較和歷史建議
 - **Vectorize**: 向量化棋譜資料庫，增強 AI 判斷能力
-- **局面分析**: 即時分析當前棋局形勢
 
 ### 🏠 房間系統
 - **Durable Objects**: 基於 Cloudflare 的即時多人對戰房間
 - **4 位隨機房間代碼**: 簡單易記，方便分享和加入
-- **即時通訊**: WebSocket 支援聊天和觀戰
+- **即時通訊**: WebSocket 支援聊天
 - **自動重連**: 網路斷線自動重連機制
 
 ### 👤 用戶系統
@@ -42,6 +43,7 @@
 - **TypeScript**: 類型安全的開發體驗，提升程式碼品質
 - **Durable Objects**: 有狀態的即時服務，支援多人對戰
 - **D1 資料庫**: SQLite 兼容的無伺服器資料庫，持久化存儲
+- **KV 存儲**: 鍵值對存儲服務，用於管理員配置和快取
 - **Vectorize**: 向量資料庫服務，AI 相似度檢索
 - **Workers AI**: 內建 AI 模型服務，智能對戰引擎
 - **靜態資源**: 自動 CDN 分發，全球加速
@@ -84,42 +86,41 @@
    wrangler login
    ```
 
-4. **一鍵部署**
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
+4. **手動部署**
 
-### 手動部署
-
-如果自動部署腳本無法運行，可以手動執行以下步驟：
+執行以下步驟進行部署：
 
 1. **創建 D1 資料庫**
    ```bash
    wrangler d1 create gomoku-db
    ```
 
-2. **更新 wrangler.toml**
-   將生成的 database_id 填入 wrangler.toml 文件中
+2. **創建 KV 命名空間**
+   ```bash
+   wrangler kv:namespace create "gomoku_admin"
+   ```
 
-3. **執行資料庫遷移**
+3. **更新 wrangler.toml**
+   將生成的 database_id 和 kv namespace id 填入 wrangler.toml 文件中
+
+4. **執行資料庫遷移**
    ```bash
    wrangler d1 migrations apply gomoku-db --remote
    ```
 
-4. **創建 Vectorize 索引**
+5. **創建 Vectorize 索引**
    ```bash
-   wrangler vectorize create gomoku-games --dimensions=384 --metric=cosine
+   wrangler vectorize create gomoku-games --dimensions=768 --metric=cosine
    ```
 
-5. **部署 Worker**
+6. **部署 Worker**
    ```bash
    wrangler deploy
    ```
 
 ## 📚 API 文檔
 
-### 遊戲 API
+### 遊戲 API (`/api/game`)
 
 - \`POST /api/game/create\` - 創建新遊戲
 - \`POST /api/game/move\` - 執行落子
@@ -129,7 +130,7 @@
 - \`GET /api/game/suggestions\` - 獲取走法建議
 - \`POST /api/game/save-record\` - 保存遊戲記錄
 
-### 用戶 API
+### 用戶 API (`/api/user`)
 
 - \`POST /api/user/register\` - 用戶註冊
 - \`POST /api/user/login\` - 用戶登入
@@ -139,12 +140,24 @@
 - \`GET /api/user/stats/:id\` - 獲取用戶統計
 - \`GET /api/user/search\` - 搜索用戶
 
-### 房間 API
+### 房間 API (`/api/room`)
 
 - \`POST /api/room/create\` - 創建房間
 - \`POST /api/room/join\` - 加入房間
 - \`GET /api/room/:code\` - 獲取房間信息
 - \`WebSocket /api/room/:code/websocket\` - 房間即時通訊
+
+### 管理員 API (`/api/admin`)
+
+- \`GET /api/admin/stats\` - 獲取系統統計
+- \`POST /api/admin/cleanup\` - 執行系統清理
+- \`GET /api/admin/users\` - 獲取用戶列表
+
+### 遊戲記錄 API (`/api/gameRecord`)
+
+- \`GET /api/gameRecord/:id\` - 獲取遊戲記錄
+- \`GET /api/gameRecord/user/:userId\` - 獲取用戶遊戲記錄
+- \`POST /api/gameRecord/save\` - 保存遊戲記錄
 
 ## 🎯 遊戲規則
 
@@ -179,11 +192,20 @@ npm run lint
 
 # 代碼格式化
 npm run format
+
+# 部署到 Cloudflare
+npm run deploy
 ```
 
 ### 資料庫管理
 
 ```bash
+# 創建 D1 資料庫
+npm run db:create
+
+# 執行資料庫遷移
+npm run db:migrate
+
 # 創建新遷移
 wrangler d1 migrations create gomoku-db <migration-name>
 
@@ -200,6 +222,9 @@ wrangler d1 execute gomoku-db --command="SELECT * FROM users LIMIT 10"
 ### Vectorize 管理
 
 ```bash
+# 創建 Vectorize 索引
+npm run vectorize:create
+
 # 查看索引信息
 wrangler vectorize get gomoku-games
 
@@ -208,6 +233,28 @@ wrangler vectorize insert gomoku-games --file=vectors.json
 
 # 查詢相似向量
 wrangler vectorize query gomoku-games --vector="[0.1, 0.2, ...]"
+```
+
+### KV 存儲管理
+
+```bash
+# 創建 KV 命名空間
+wrangler kv:namespace create "gomoku_admin"
+
+# 列出所有 KV 命名空間
+wrangler kv:namespace list
+
+# 查看 KV 中的鍵值對
+wrangler kv:key list --binding=gomoku_admin
+
+# 設置 KV 值
+wrangler kv:key put "key" "value" --binding=gomoku_admin
+
+# 獲取 KV 值
+wrangler kv:key get "key" --binding=gomoku_admin
+
+# 刪除 KV 值
+wrangler kv:key delete "key" --binding=gomoku_admin
 ```
 
 ## 📁 專案結構
@@ -219,18 +266,22 @@ gomoku-cf/
 │   │   ├── AIEngine.ts      # AI 引擎核心
 │   │   └── VectorizeService.ts # 向量化服務
 │   ├── database/            # 資料庫服務
+│   │   ├── RoomService.ts   # 房間資料管理
 │   │   └── UserService.ts   # 用戶資料管理
 │   ├── durable-objects/     # Durable Objects
 │   │   └── GameRoom.ts      # 遊戲房間實例
 │   ├── game/                # 遊戲核心邏輯
 │   │   └── GameLogic.ts     # 五子棋遊戲規則
 │   ├── handlers/            # API 路由處理器
+│   │   ├── admin.ts         # 管理員 API
+│   │   ├── cron.ts          # 定時任務處理
 │   │   ├── game.ts          # 遊戲相關 API
 │   │   ├── gameRecord.ts    # 遊戲記錄處理
 │   │   ├── room.ts          # 房間管理 API
 │   │   ├── static.ts        # 靜態資源服務
 │   │   └── user.ts          # 用戶管理 API
 │   ├── utils/               # 工具函數
+│   │   ├── auth.ts          # 身份驗證工具
 │   │   └── cors.ts          # CORS 跨域設定
 │   ├── types.ts             # TypeScript 類型定義
 │   └── index.ts             # 應用程式主入口
@@ -244,9 +295,9 @@ gomoku-cf/
 ├── package.json             # Node.js 專案配置
 ├── tsconfig.json            # TypeScript 編譯配置
 ├── worker-configuration.d.ts # Workers 類型定義
-├── deploy.sh                # Linux/macOS 部署腳本
-├── deploy.cmd               # Windows 部署腳本
-├── QUICKSTART.md            # 快速開始指南
+├── .eslintrc.js             # ESLint 配置
+├── .prettierrc              # Prettier 配置
+├── .gitignore               # Git 忽略檔案
 └── README.md                # 專案說明文檔
 ```
 
@@ -259,7 +310,7 @@ gomoku-cf/
 - **難度分級**: 三種 AI 難度等級，適合不同水平玩家
 
 ### 向量化棋譜資料庫
-- **智能向量化**: 將棋盤狀態轉換為 384 維向量
+- **智能向量化**: 將棋盤狀態轉換為 768 維向量
 - **快速檢索**: 基於餘弦相似度的快速檢索
 - **歷史建議**: 提供相似局面的歷史棋譜建議
 - **持續學習**: 每次對局都會更新向量資料庫
@@ -276,6 +327,7 @@ gomoku-cf/
 - **詳細統計**: 勝率、評分變化、對局時長等統計
 - **全球排行榜**: 實時更新的全球玩家排名
 - **匿名支援**: 支援匿名對戰，自動生成用戶名
+- **管理員配置**: 基於 KV 存儲的管理員設定和系統快取
 
 ### 現代化技術棧
 - **無伺服器架構**: 基於 Cloudflare Workers 的無伺服器架構
