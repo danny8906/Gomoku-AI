@@ -120,44 +120,144 @@
 
 ## 📚 API 文檔
 
-### 遊戲 API (`/api/game`)
+### 🎮 遊戲 API (`/api/game`)
 
-- \`POST /api/game/create\` - 創建新遊戲
-- \`POST /api/game/move\` - 執行落子
-- \`POST /api/game/ai-move\` - 請求 AI 落子
-- \`POST /api/game/analyze\` - 分析局面
-- \`GET /api/game/state/:id\` - 獲取遊戲狀態
-- \`GET /api/game/suggestions\` - 獲取走法建議
-- \`POST /api/game/save-record\` - 保存遊戲記錄
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `POST` | `/api/game/create` | 創建新遊戲 | ❌ |
+| `POST` | `/api/game/move` | 執行落子 | ❌ |
+| `POST` | `/api/game/ai-move` | AI 落子 | ❌ |
+| `POST` | `/api/game/analyze` | 分析局面 | ❌ |
+| `GET` | `/api/game/state/:id` | 獲取遊戲狀態 | ❌ |
+| `GET` | `/api/game/suggestions` | 獲取走法建議 | ❌ |
 
-### 用戶 API (`/api/user`)
+**請求範例：**
+```json
+// POST /api/game/create
+{
+  "mode": "ai" | "pvp",
+  "userId": "string"
+}
 
-- \`POST /api/user/register\` - 用戶註冊
-- \`POST /api/user/login\` - 用戶登入
-- \`GET /api/user/profile/:id\` - 獲取用戶資料
-- \`GET /api/user/leaderboard\` - 獲取排行榜
-- \`GET /api/user/history/:id\` - 獲取遊戲歷史
-- \`GET /api/user/stats/:id\` - 獲取用戶統計
-- \`GET /api/user/search\` - 搜索用戶
+// POST /api/game/move
+{
+  "gameId": "string",
+  "position": { "row": number, "col": number },
+  "player": "black" | "white"
+}
 
-### 房間 API (`/api/room`)
+// POST /api/game/ai-move
+{
+  "gameId": "string",
+  "difficulty": "easy" | "medium" | "hard"
+}
+```
 
-- \`POST /api/room/create\` - 創建房間
-- \`POST /api/room/join\` - 加入房間
-- \`GET /api/room/:code\` - 獲取房間信息
-- \`WebSocket /api/room/:code/websocket\` - 房間即時通訊
+### 👤 用戶 API (`/api/user`)
 
-### 管理員 API (`/api/admin`)
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `POST` | `/api/user/register` | 用戶註冊 | ❌ |
+| `POST` | `/api/user/login` | 用戶登入 | ❌ |
+| `POST` | `/api/user/change-password` | 更改密碼 | ✅ |
+| `GET` | `/api/user/profile/:id` | 獲取用戶資料 | ❌ |
+| `GET` | `/api/user/leaderboard` | 獲取排行榜 | ❌ |
+| `GET` | `/api/user/history/:id` | 獲取遊戲歷史 | ❌ |
+| `GET` | `/api/user/stats/:id` | 獲取用戶統計 | ❌ |
+| `GET` | `/api/user/search` | 搜索用戶 | ❌ |
+| `GET` | `/api/user/me` | 獲取當前用戶 | ✅ |
 
-- \`GET /api/admin/stats\` - 獲取系統統計
-- \`POST /api/admin/cleanup\` - 執行系統清理
-- \`GET /api/admin/users\` - 獲取用戶列表
+**請求範例：**
+```json
+// POST /api/user/register
+{
+  "username": "string",
+  "email": "string?",
+  "password": "string?"
+}
 
-### 遊戲記錄 API (`/api/gameRecord`)
+// POST /api/user/login
+{
+  "username": "string",
+  "password": "string"
+}
 
-- \`GET /api/gameRecord/:id\` - 獲取遊戲記錄
-- \`GET /api/gameRecord/user/:userId\` - 獲取用戶遊戲記錄
-- \`POST /api/gameRecord/save\` - 保存遊戲記錄
+// GET /api/user/leaderboard?limit=10
+// GET /api/user/search?q=username&limit=10
+```
+
+### 🏠 房間 API (`/api/room`)
+
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `POST` | `/api/room/create` | 創建房間 | ❌ |
+| `POST` | `/api/room/join` | 加入房間 | ❌ |
+| `GET` | `/api/room/:code` | 獲取房間信息 | ❌ |
+| `GET` | `/api/room/:code/websocket` | WebSocket 連接 | ❌ |
+| `GET` | `/api/room/:code/stats` | 獲取房間統計 | ❌ |
+| `POST` | `/api/room/:code/cleanup` | 手動清理房間 | ❌ |
+
+**請求範例：**
+```json
+// POST /api/room/create
+{
+  "mode": "pvp" | "ai",
+  "userId": "string"
+}
+
+// POST /api/room/join
+{
+  "roomCode": "string",
+  "userId": "string"
+}
+```
+
+### 🔧 管理員 API (`/api/admin`)
+
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `GET` | `/api/admin/rooms` | 獲取所有房間 | ✅ |
+| `GET` | `/api/admin/rooms/active` | 獲取活躍房間 | ✅ |
+| `GET` | `/api/admin/rooms/idle` | 獲取閒置房間 | ✅ |
+| `GET` | `/api/admin/rooms/stats` | 獲取房間統計 | ✅ |
+| `GET` | `/api/admin/rooms/:code` | 獲取房間詳情 | ✅ |
+| `POST` | `/api/admin/rooms/cleanup` | 清理所有閒置房間 | ✅ |
+| `POST` | `/api/admin/rooms/:code/cleanup` | 清理特定房間 | ✅ |
+| `POST` | `/api/admin/database/clear` | 清空資料庫 | ✅ |
+| `POST` | `/api/admin/password/set` | 設置管理員密碼 | ✅ |
+
+**認證方式：**
+```
+Authorization: Bearer <admin_token>
+```
+
+### 📊 遊戲記錄 API (`/api/gameRecord`)
+
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `GET` | `/api/gameRecord/:id` | 獲取遊戲記錄 | ❌ |
+| `GET` | `/api/gameRecord/user/:userId` | 獲取用戶遊戲記錄 | ❌ |
+| `POST` | `/api/gameRecord/save` | 保存遊戲記錄 | ❌ |
+
+### 🌐 靜態資源 API
+
+| 方法 | 端點 | 功能 | 認證 |
+|------|------|------|------|
+| `GET` | `/` | 首頁 | ❌ |
+| `GET` | `/game` | 遊戲頁面 | ❌ |
+| `GET` | `/room` | 房間頁面 | ❌ |
+| `GET` | `/profile` | 個人資料頁面 | ❌ |
+| `GET` | `/leaderboard` | 排行榜頁面 | ❌ |
+| `GET` | `/app.js` | 應用程式 JavaScript | ❌ |
+| `GET` | `/styles.css` | 樣式表 | ❌ |
+| `GET` | `/favicon.ico` | 網站圖標 | ❌ |
+
+### ⏰ 定時任務
+
+| 任務 | 頻率 | 功能 |
+|------|------|------|
+| `handleHourlyCleanup` | 每小時 | 清理閒置房間 |
+| `handleDailyCleanup` | 每天 | 深度清理任務 |
 
 ## 🎯 遊戲規則
 
