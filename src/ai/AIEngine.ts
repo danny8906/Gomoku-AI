@@ -111,7 +111,7 @@ ${boardString}
 
 請用繁體中文回答，並保持分析簡潔明確。`;
 
-    const response = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+    const response = await this.env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
       messages: [
         {
           role: 'system',
@@ -257,7 +257,7 @@ ${analysis}
 我選擇在 (${position.row}, ${position.col}) 落子。請簡潔說明這步棋的戰略意圖，不超過 50 字。`;
 
     try {
-      const response = await this.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+      const response = await this.env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
         messages: [
           {
             role: 'system',
@@ -370,7 +370,7 @@ ${boardString}
 
       // 使用 Text Generation 提供詳細分析
       const detailedAnalysis = await this.env.AI.run(
-        '@cf/meta/llama-3.1-8b-instruct',
+        '@cf/meta/llama-4-scout-17b-16e-instruct',
         {
           messages: [
             {
