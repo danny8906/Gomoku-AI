@@ -304,6 +304,8 @@ function getRoomHTML(): string {
             <div class="room-info">
                 <span id="room-code">房間代碼: ----</span>
                 <span id="player-count">玩家: 0/2</span>
+                <span id="current-player" style="display: none;">黑棋回合</span>
+                <span id="game-status" style="display: none;">遊戲進行中</span>
             </div>
         </header>
         
@@ -321,40 +323,42 @@ function getRoomHTML(): string {
                 </div>
                 
                 <div class="game-area" id="game-area" style="display: none;">
-                    <div class="game-board-container">
-                        <canvas id="game-board" width="600" height="600"></canvas>
-                        <div id="game-controls">
-                            <button class="btn secondary" onclick="leaveRoom()">離開房間</button>
-                            <button class="btn primary" onclick="restartGame()" style="display: none;">重新開始</button>
-                        </div>
-                    </div>
-                    
-                    <div class="room-sidebar">
-                        <div class="player-info">
-                            <div class="player black">
-                                <div class="player-piece"></div>
-                                <span>黑棋</span>
-                                <span id="black-player">等待中...</span>
-                            </div>
-                            <div class="player white">
-                                <div class="player-piece"></div>
-                                <span>白棋</span>
-                                <span id="white-player">等待中...</span>
+                    <div class="game-container">
+                        <div class="game-board-container">
+                            <canvas id="game-board" width="600" height="600"></canvas>
+                            <div id="game-controls">
+                                <button class="btn secondary" onclick="leaveRoom()">離開房間</button>
+                                <button class="btn primary" onclick="restartGame()" style="display: none;">重新開始</button>
                             </div>
                         </div>
                         
-                        <div class="chat-area">
-                            <h4>聊天室</h4>
-                            <div id="chat-messages"></div>
-                            <div class="chat-input">
-                                <input type="text" id="chat-input" placeholder="輸入訊息..." maxlength="200">
-                                <button onclick="sendMessage()">發送</button>
+                        <div class="game-sidebar">
+                            <div class="player-info">
+                                <div class="player black">
+                                    <div class="player-piece"></div>
+                                    <span>黑棋</span>
+                                    <span id="black-player">等待中...</span>
+                                </div>
+                                <div class="player white">
+                                    <div class="player-piece"></div>
+                                    <span>白棋</span>
+                                    <span id="white-player">等待中...</span>
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="move-history">
-                            <h4>走法記錄</h4>
-                            <div id="moves-list"></div>
+                            
+                            <div class="chat-area">
+                                <h4>💬 聊天室</h4>
+                                <div id="chat-messages" class="chat-messages-container"></div>
+                                <div class="chat-input">
+                                    <input type="text" id="chat-input" placeholder="輸入訊息..." maxlength="200">
+                                    <button onclick="sendMessage()">發送</button>
+                                </div>
+                            </div>
+                            
+                            <div class="move-history">
+                                <h4>📝 走法記錄</h4>
+                                <div id="moves-list"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1355,7 +1359,7 @@ body.modal-open {
     background: white;
 }
 
-.move-history, .ai-analysis, .suggestions {
+.move-history, .ai-analysis, .suggestions, .chat-area {
     background: rgba(255, 255, 255, 0.95);
     padding: 1.5rem;
     border-radius: 15px;
@@ -1455,7 +1459,7 @@ body.modal-open {
     box-shadow: 0 0 0 3px var(--color-shadow-focus), 0 4px 12px rgba(66, 153, 225, 0.2);
 }
 
-.move-history h4, .ai-analysis h4, .suggestions h4 {
+.move-history h4, .ai-analysis h4, .suggestions h4, .chat-area h4 {
     margin-bottom: 1rem;
     color: #4a5568;
 }
@@ -1463,6 +1467,63 @@ body.modal-open {
 #moves-list {
     max-height: 200px;
     overflow-y: auto;
+}
+
+/* 聊天室樣式 */
+.chat-messages-container {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background: #f8fafc;
+}
+
+.chat-message {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chat-user {
+    font-weight: 600;
+    color: #4299e1;
+    margin-right: 0.5rem;
+}
+
+.chat-text {
+    color: #2d3748;
+}
+
+.chat-input {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.chat-input input {
+    flex: 1;
+    padding: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+
+.chat-input button {
+    padding: 0.5rem 1rem;
+    background: #4299e1;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+
+.chat-input button:hover {
+    background: #3182ce;
 }
 
 .move-item {
@@ -2669,8 +2730,55 @@ class GomokuGame {
             }
         }
         
+        // 更新回合顯示
+        this.updateRoomTurnDisplay();
+        
         // 更新玩家數量
         this.updatePlayerCount();
+    }
+    
+    updateRoomTurnDisplay() {
+        if (!this.gameState) return;
+        
+        const currentPlayerEl = document.getElementById('current-player');
+        const gameStatusEl = document.getElementById('game-status');
+        
+        // 只在遊戲進行中顯示回合信息
+        if (this.gameState.status === 'playing') {
+            if (currentPlayerEl) {
+                currentPlayerEl.style.display = 'inline';
+                const playerName = this.gameState.currentPlayer === 'black' ? '黑棋' : '白棋';
+                currentPlayerEl.textContent = \`\${playerName}回合\`;
+            }
+            
+            if (gameStatusEl) {
+                gameStatusEl.style.display = 'inline';
+                gameStatusEl.textContent = '遊戲進行中';
+            }
+        } else if (this.gameState.status === 'finished') {
+            if (currentPlayerEl) {
+                currentPlayerEl.style.display = 'none';
+            }
+            
+            if (gameStatusEl) {
+                gameStatusEl.style.display = 'inline';
+                if (this.gameState.winner === 'draw') {
+                    gameStatusEl.textContent = '平局';
+                } else {
+                    const winnerName = this.gameState.winner === 'black' ? '黑棋' : '白棋';
+                    gameStatusEl.textContent = \`\${winnerName}獲勝\`;
+                }
+            }
+        } else {
+            // 等待狀態
+            if (currentPlayerEl) {
+                currentPlayerEl.style.display = 'none';
+            }
+            
+            if (gameStatusEl) {
+                gameStatusEl.style.display = 'none';
+            }
+        }
     }
     
     displayChatMessage(chatData) {
@@ -4039,7 +4147,14 @@ function sendMessage() {
     const message = chatInput.value.trim();
     if (message.length === 0) return;
     
-    // 發送聊天訊息
+    // 立即在本地顯示自己的訊息
+    const currentUserId = game.getCurrentUserId();
+    game.displayChatMessage({
+        userId: currentUserId.startsWith('匿名玩家_') ? currentUserId : '玩家 ' + currentUserId.slice(-6),
+        message: message
+    });
+    
+    // 發送聊天訊息到其他玩家
     game.websocket.send(JSON.stringify({
         type: 'chat',
         data: { message },
