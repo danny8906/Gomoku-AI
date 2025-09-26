@@ -5,19 +5,30 @@
 import { Env } from '../types';
 import { corsHeaders } from '../utils/cors';
 import { RoomService } from '../database/RoomService';
+import { verifyAdminPassword, setAdminPassword } from '../utils/auth';
 
 export async function handleAdminAPI(
   request: Request,
-  env: Env,
-  ctx: ExecutionContext
+  env: Env
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/admin', '');
 
-  // 簡單的認證檢查（在生產環境中應該使用更安全的認證方式）
+  // 認證檢查
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return new Response(JSON.stringify({ error: '需要認證' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders }
+    });
+  }
+
+  const token = authHeader.substring(7); // 移除 'Bearer ' 前綴
+  
+  // 驗證管理員密碼
+  const isValid = await verifyAdminPassword(token, env);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: '無效的認證令牌' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
@@ -51,6 +62,12 @@ export async function handleAdminAPI(
     case 'POST':
       if (path === '/rooms/cleanup') {
         return handleCleanupRooms(roomService);
+      }
+      if (path === '/database/clear') {
+        return handleClearDatabase(env);
+      }
+      if (path === '/password/set') {
+        return handleSetPassword(request, env);
       }
       if (path.startsWith('/rooms/')) {
         const roomCode = path.split('/')[2];
@@ -292,6 +309,112 @@ async function handleCleanupRoom(roomService: RoomService, roomCode: string): Pr
     console.error(`清理房間 ${roomCode} 失敗:`, error);
     return new Response(JSON.stringify({ 
       error: '清理房間失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  }
+}
+
+/**
+ * 設置管理員密碼
+ */
+async function handleSetPassword(request: Request, env: Env): Promise<Response> {
+  try {
+    const { password } = await request.json() as { password: string };
+    
+    if (!password || password.length < 6) {
+      return new Response(JSON.stringify({ 
+        error: '密碼長度至少需要 6 個字符' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    const success = await setAdminPassword(password, env);
+    
+    if (!success) {
+      return new Response(JSON.stringify({ 
+        error: '設置密碼失敗' 
+      }), {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        }
+      });
+    }
+
+    return new Response(JSON.stringify({
+      message: '管理員密碼設置成功'
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('設置管理員密碼失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '設置密碼失敗',
+      message: error instanceof Error ? error.message : '未知錯誤'
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  }
+}
+
+/**
+ * 清空資料庫所有資料
+ */
+async function handleClearDatabase(env: Env): Promise<Response> {
+  try {
+    // 按照外鍵約束的正確順序刪除資料
+    const deleteQueries = [
+      'DELETE FROM game_records',
+      'DELETE FROM rooms', 
+      'DELETE FROM games',
+      'DELETE FROM users'
+    ];
+
+    const results = [];
+    for (const query of deleteQueries) {
+      const result = await env.DB.prepare(query).run();
+      results.push({
+        query,
+        changes: result.meta.changes,
+        success: result.meta.success
+      });
+    }
+
+    const totalChanges = results.reduce((sum, r) => sum + r.changes, 0);
+
+    return new Response(JSON.stringify({
+      message: '資料庫清空完成',
+      totalChanges,
+      results
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...corsHeaders
+      }
+    });
+  } catch (error) {
+    console.error('清空資料庫失敗:', error);
+    return new Response(JSON.stringify({ 
+      error: '清空資料庫失敗',
       message: error instanceof Error ? error.message : '未知錯誤'
     }), {
       status: 500,

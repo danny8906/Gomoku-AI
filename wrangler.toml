@@ -16,6 +16,10 @@ binding = "DB"
 database_name = "gomoku-db"
 database_id = "0f777beb-259d-43a6-8a31-6886314847dd"
 
+[[kv_namespaces]]
+binding = "gomoku_admin"
+id = "fc9ed4c653354d648e2f35a317561b52"
+
 [durable_objects]
 bindings = [
   { name = "GAME_ROOM", class_name = "GameRoom" }

@@ -8,6 +8,7 @@ export interface Env {
   DB: D1Database;
   GAME_ROOM: DurableObjectNamespace;
   JWT_SECRET?: string;
+  gomoku_admin: KVNamespace;
 }
 
 // 遊戲相關類型
