@@ -4,7 +4,10 @@
 
 import { Env } from '../types';
 
-export async function serveStaticAssets(request: Request, env: Env): Promise<Response> {
+export async function serveStaticAssets(
+  request: Request,
+  env: Env
+): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -12,43 +15,42 @@ export async function serveStaticAssets(request: Request, env: Env): Promise<Res
   switch (path) {
     case '/':
       return new Response(getIndexHTML(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
-    
+
     case '/game':
       return new Response(getGameHTML(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
-    
+
     case '/room':
       return new Response(getRoomHTML(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
-    
+
     case '/profile':
       return new Response(getProfileHTML(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
-    
+
     case '/leaderboard':
       return new Response(getLeaderboardHTML(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
-    
+
     case '/app.js':
       return new Response(getAppJS(), {
-        headers: { 'Content-Type': 'application/javascript; charset=utf-8' }
+        headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
       });
-    
+
     case '/styles.css':
       return new Response(getStylesCSS(), {
-        headers: { 'Content-Type': 'text/css; charset=utf-8' }
+        headers: { 'Content-Type': 'text/css; charset=utf-8' },
       });
-    
+
     case '/favicon.ico':
       return new Response('', { status: 204 });
-    
-    
+
     default:
       return new Response('Not found', { status: 404 });
   }
@@ -2324,7 +2326,6 @@ body.modal-open {
     background: #f7fafc;
 }`;
 }
-
 
 function getAppJS(): string {
   return `// OmniAI 五子棋 JavaScript

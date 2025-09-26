@@ -44,9 +44,9 @@ export async function handleGameAPI(
       break;
   }
 
-  return new Response('Not found', { 
+  return new Response('Not found', {
     status: 404,
-    headers: corsHeaders
+    headers: corsHeaders,
   });
 }
 
@@ -55,8 +55,8 @@ export async function handleGameAPI(
  */
 async function handleCreateGame(request: Request, env: Env): Promise<Response> {
   try {
-    const { mode, userId } = await request.json() as { 
-      mode: 'pvp' | 'ai'; 
+    const { mode, userId } = (await request.json()) as {
+      mode: 'pvp' | 'ai';
       userId?: string;
     };
 
@@ -66,64 +66,83 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
     // 如果是 AI 模式，設置玩家
     if (mode === 'ai' && userId) {
       // 先檢查用戶是否存在，如果不存在則創建匿名用戶
-      const existingUser = await env.DB.prepare(`
+      const existingUser = await env.DB.prepare(
+        `
         SELECT id FROM users WHERE id = ?1
-      `).bind(userId).first();
-      
+      `
+      )
+        .bind(userId)
+        .first();
+
       if (!existingUser) {
         // 創建匿名用戶
-        await env.DB.prepare(`
+        await env.DB.prepare(
+          `
           INSERT OR IGNORE INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        `).bind(
-          userId,
-          `匿名玩家_${userId.slice(-6)}`,
-          0, 0, 0, 1200,
-          Date.now(), Date.now()
-        ).run();
+        `
+        )
+          .bind(
+            userId,
+            `匿名玩家_${userId.slice(-6)}`,
+            0,
+            0,
+            0,
+            1200,
+            Date.now(),
+            Date.now()
+          )
+          .run();
       }
-      
+
       gameState.players.black = userId;
       gameState.status = 'playing';
     }
 
     // 保存到資料庫
-    await env.DB.prepare(`
+    await env.DB.prepare(
+      `
       INSERT INTO games (
         id, board_state, current_player, status, mode, 
         black_player_id, white_player_id, created_at, updated_at, moves
       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-    `).bind(
-      gameState.id,
-      JSON.stringify(gameState.board),
-      gameState.currentPlayer,
-      gameState.status,
-      gameState.mode,
-      gameState.players.black || null,
-      gameState.players.white || null,
-      gameState.createdAt,
-      gameState.updatedAt,
-      JSON.stringify(gameState.moves)
-    ).run();
+    `
+    )
+      .bind(
+        gameState.id,
+        JSON.stringify(gameState.board),
+        gameState.currentPlayer,
+        gameState.status,
+        gameState.mode,
+        gameState.players.black || null,
+        gameState.players.white || null,
+        gameState.createdAt,
+        gameState.updatedAt,
+        JSON.stringify(gameState.moves)
+      )
+      .run();
 
     return new Response(JSON.stringify({ gameState }), {
       headers: {
         'Content-Type': 'application/json',
-        ...corsHeaders
-      }
+        ...corsHeaders,
+      },
     });
   } catch (error) {
     console.error('創建遊戲失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: '創建遊戲失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: '創建遊戲失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }
 
@@ -132,24 +151,28 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
  */
 async function handleMakeMove(request: Request, env: Env): Promise<Response> {
   try {
-    const { gameId, position, player } = await request.json() as {
+    const { gameId, position, player } = (await request.json()) as {
       gameId: string;
       position: Position;
       player: 'black' | 'white';
     };
 
     // 從資料庫獲取遊戲狀態
-    const gameData = await env.DB.prepare(`
+    const gameData = await env.DB.prepare(
+      `
       SELECT * FROM games WHERE id = ?1
-    `).bind(gameId).first();
+    `
+    )
+      .bind(gameId)
+      .first();
 
     if (!gameData) {
       return new Response(JSON.stringify({ error: '遊戲不存在' }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -163,31 +186,35 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
       moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
-        black: gameData.black_player_id as string || undefined,
-        white: gameData.white_player_id as string || undefined
+        black: (gameData.black_player_id as string) || undefined,
+        white: (gameData.white_player_id as string) || undefined,
       },
       createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number
+      updatedAt: gameData.updated_at as number,
     };
 
     // 執行落子
     const newGameState = GameLogic.makeMove(gameState, position, player);
 
     // 更新資料庫
-    await env.DB.prepare(`
+    await env.DB.prepare(
+      `
       UPDATE games 
       SET board_state = ?1, current_player = ?2, status = ?3, 
           winner = ?4, updated_at = ?5, moves = ?6
       WHERE id = ?7
-    `).bind(
-      JSON.stringify(newGameState.board),
-      newGameState.currentPlayer,
-      newGameState.status,
-      newGameState.winner,
-      newGameState.updatedAt,
-      JSON.stringify(newGameState.moves),
-      gameId
-    ).run();
+    `
+    )
+      .bind(
+        JSON.stringify(newGameState.board),
+        newGameState.currentPlayer,
+        newGameState.status,
+        newGameState.winner,
+        newGameState.updatedAt,
+        JSON.stringify(newGameState.moves),
+        gameId
+      )
+      .run();
 
     // 如果遊戲結束，儲存到 Vectorize
     if (newGameState.status === 'finished') {
@@ -198,21 +225,24 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ gameState: newGameState }), {
       headers: {
         'Content-Type': 'application/json',
-        ...corsHeaders
-      }
+        ...corsHeaders,
+      },
     });
   } catch (error) {
     console.error('執行落子失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: '落子失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 400,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: '落子失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }
 
@@ -221,23 +251,27 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
  */
 async function handleAIMove(request: Request, env: Env): Promise<Response> {
   try {
-    const { gameId, difficulty } = await request.json() as {
+    const { gameId, difficulty } = (await request.json()) as {
       gameId: string;
       difficulty?: 'easy' | 'medium' | 'hard';
     };
 
     // 獲取遊戲狀態
-    const gameData = await env.DB.prepare(`
+    const gameData = await env.DB.prepare(
+      `
       SELECT * FROM games WHERE id = ?1
-    `).bind(gameId).first();
+    `
+    )
+      .bind(gameId)
+      .first();
 
     if (!gameData) {
       return new Response(JSON.stringify({ error: '遊戲不存在' }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -250,11 +284,11 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
       moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
-        black: gameData.black_player_id as string || undefined,
-        white: gameData.white_player_id as string || undefined
+        black: (gameData.black_player_id as string) || undefined,
+        white: (gameData.white_player_id as string) || undefined,
       },
       createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number
+      updatedAt: gameData.updated_at as number,
     };
 
     // 生成 AI 落子
@@ -263,26 +297,30 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
 
     // 執行 AI 落子
     const newGameState = GameLogic.makeMove(
-      gameState, 
-      aiMove.position, 
+      gameState,
+      aiMove.position,
       gameState.currentPlayer
     );
 
     // 更新資料庫
-    await env.DB.prepare(`
+    await env.DB.prepare(
+      `
       UPDATE games 
       SET board_state = ?1, current_player = ?2, status = ?3, 
           winner = ?4, updated_at = ?5, moves = ?6
       WHERE id = ?7
-    `).bind(
-      JSON.stringify(newGameState.board),
-      newGameState.currentPlayer,
-      newGameState.status,
-      newGameState.winner,
-      newGameState.updatedAt,
-      JSON.stringify(newGameState.moves),
-      gameId
-    ).run();
+    `
+    )
+      .bind(
+        JSON.stringify(newGameState.board),
+        newGameState.currentPlayer,
+        newGameState.status,
+        newGameState.winner,
+        newGameState.updatedAt,
+        JSON.stringify(newGameState.moves),
+        gameId
+      )
+      .run();
 
     // 如果遊戲結束，保存遊戲記錄
     if (newGameState.status === 'finished') {
@@ -291,60 +329,76 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
 
     // 分析局面並儲存到 Vectorize
     const vectorizeService = new VectorizeService(env);
-    const analysis = await aiEngine.analyzeGameAdvantage(newGameState, gameState.currentPlayer);
+    const analysis = await aiEngine.analyzeGameAdvantage(
+      newGameState,
+      gameState.currentPlayer
+    );
     await vectorizeService.storeGameState(newGameState, analysis.advantage);
 
-    return new Response(JSON.stringify({ 
-      gameState: newGameState,
-      aiMove: {
-        position: aiMove.position,
-        reasoning: aiMove.reasoning,
-        confidence: aiMove.confidence
-      },
-      analysis
-    }), {
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        gameState: newGameState,
+        aiMove: {
+          position: aiMove.position,
+          reasoning: aiMove.reasoning,
+          confidence: aiMove.confidence,
+        },
+        analysis,
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   } catch (error) {
     console.error('AI 落子失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: 'AI 落子失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: 'AI 落子失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }
 
 /**
  * 分析遊戲局面
  */
-async function handleAnalyzeGame(request: Request, env: Env): Promise<Response> {
+async function handleAnalyzeGame(
+  request: Request,
+  env: Env
+): Promise<Response> {
   try {
-    const { gameId, player } = await request.json() as {
+    const { gameId, player } = (await request.json()) as {
       gameId: string;
       player: 'black' | 'white';
     };
 
     // 獲取遊戲狀態
-    const gameData = await env.DB.prepare(`
+    const gameData = await env.DB.prepare(
+      `
       SELECT * FROM games WHERE id = ?1
-    `).bind(gameId).first();
+    `
+    )
+      .bind(gameId)
+      .first();
 
     if (!gameData) {
       return new Response(JSON.stringify({ error: '遊戲不存在' }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -357,11 +411,11 @@ async function handleAnalyzeGame(request: Request, env: Env): Promise<Response> 
       moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
-        black: gameData.black_player_id as string || undefined,
-        white: gameData.white_player_id as string || undefined
+        black: (gameData.black_player_id as string) || undefined,
+        white: (gameData.white_player_id as string) || undefined,
       },
       createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number
+      updatedAt: gameData.updated_at as number,
     };
 
     // 使用 AI 分析局面
@@ -370,29 +424,36 @@ async function handleAnalyzeGame(request: Request, env: Env): Promise<Response> 
 
     // 獲取歷史建議
     const vectorizeService = new VectorizeService(env);
-    const suggestions = await vectorizeService.getHistoricalMovesSuggestions(gameState);
+    const suggestions =
+      await vectorizeService.getHistoricalMovesSuggestions(gameState);
 
-    return new Response(JSON.stringify({ 
-      analysis,
-      suggestions
-    }), {
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        analysis,
+        suggestions,
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   } catch (error) {
     console.error('分析遊戲失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: '分析遊戲失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: '分析遊戲失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }
 
@@ -401,17 +462,21 @@ async function handleAnalyzeGame(request: Request, env: Env): Promise<Response> 
  */
 async function handleGetGameState(gameId: string, env: Env): Promise<Response> {
   try {
-    const gameData = await env.DB.prepare(`
+    const gameData = await env.DB.prepare(
+      `
       SELECT * FROM games WHERE id = ?1
-    `).bind(gameId).first();
+    `
+    )
+      .bind(gameId)
+      .first();
 
     if (!gameData) {
       return new Response(JSON.stringify({ error: '遊戲不存在' }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -423,40 +488,46 @@ async function handleGetGameState(gameId: string, env: Env): Promise<Response> {
       mode: gameData.mode as 'pvp' | 'ai',
       moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
-      roomCode: gameData.room_code as string || undefined,
+      roomCode: (gameData.room_code as string) || undefined,
       players: {
-        black: gameData.black_player_id as string || undefined,
-        white: gameData.white_player_id as string || undefined
+        black: (gameData.black_player_id as string) || undefined,
+        white: (gameData.white_player_id as string) || undefined,
       },
       createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number
+      updatedAt: gameData.updated_at as number,
     };
 
     return new Response(JSON.stringify({ gameState }), {
       headers: {
         'Content-Type': 'application/json',
-        ...corsHeaders
-      }
+        ...corsHeaders,
+      },
     });
   } catch (error) {
     console.error('獲取遊戲狀態失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: '獲取遊戲狀態失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: '獲取遊戲狀態失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }
 
 /**
  * 獲取走法建議
  */
-async function handleGetSuggestions(request: Request, env: Env): Promise<Response> {
+async function handleGetSuggestions(
+  request: Request,
+  env: Env
+): Promise<Response> {
   try {
     const url = new URL(request.url);
     const gameId = url.searchParams.get('gameId');
@@ -466,23 +537,27 @@ async function handleGetSuggestions(request: Request, env: Env): Promise<Respons
         status: 400,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
     // 獲取遊戲狀態
-    const gameData = await env.DB.prepare(`
+    const gameData = await env.DB.prepare(
+      `
       SELECT * FROM games WHERE id = ?1
-    `).bind(gameId).first();
+    `
+    )
+      .bind(gameId)
+      .first();
 
     if (!gameData) {
       return new Response(JSON.stringify({ error: '遊戲不存在' }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
-          ...corsHeaders
-        }
+          ...corsHeaders,
+        },
       });
     }
 
@@ -495,34 +570,38 @@ async function handleGetSuggestions(request: Request, env: Env): Promise<Respons
       moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
-        black: gameData.black_player_id as string || undefined,
-        white: gameData.white_player_id as string || undefined
+        black: (gameData.black_player_id as string) || undefined,
+        white: (gameData.white_player_id as string) || undefined,
       },
       createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number
+      updatedAt: gameData.updated_at as number,
     };
 
     // 獲取歷史建議
     const vectorizeService = new VectorizeService(env);
-    const suggestions = await vectorizeService.getHistoricalMovesSuggestions(gameState);
+    const suggestions =
+      await vectorizeService.getHistoricalMovesSuggestions(gameState);
 
     return new Response(JSON.stringify(suggestions), {
       headers: {
         'Content-Type': 'application/json',
-        ...corsHeaders
-      }
+        ...corsHeaders,
+      },
     });
   } catch (error) {
     console.error('獲取建議失敗:', error);
-    return new Response(JSON.stringify({ 
-      error: '獲取建議失敗',
-      message: error instanceof Error ? error.message : '未知錯誤'
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        ...corsHeaders
+    return new Response(
+      JSON.stringify({
+        error: '獲取建議失敗',
+        message: error instanceof Error ? error.message : '未知錯誤',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
-    });
+    );
   }
 }

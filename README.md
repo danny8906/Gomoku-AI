@@ -278,25 +278,6 @@ Authorization: Bearer <admin_token>
 
 ## 🔧 開發指南
 
-### 本地開發
-
-```bash
-# 啟動開發伺服器
-npm run dev
-
-# 編譯 TypeScript
-npm run build
-
-# 代碼檢查
-npm run lint
-
-# 代碼格式化
-npm run format
-
-# 部署到 Cloudflare
-npm run deploy
-```
-
 ### 資料庫管理
 
 ```bash

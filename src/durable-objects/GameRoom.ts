@@ -9,7 +9,8 @@ import { AIEngine } from '../ai/AIEngine';
 export class GameRoom {
   private state: DurableObjectState;
   private env: Env;
-  private sessions: Map<WebSocket, { userId: string; player?: Player }> = new Map();
+  private sessions: Map<WebSocket, { userId: string; player?: Player }> =
+    new Map();
   private gameState: GameState | null = null;
   private roomCode: string = '';
   private lastActivityTime: number = Date.now();
@@ -63,10 +64,10 @@ export class GameRoom {
    */
   private async handleWebSocket(request: Request): Promise<Response> {
     console.log('WebSocket 請求:', request.url);
-    
+
     const upgradeHeader = request.headers.get('Upgrade');
     console.log('Upgrade header:', upgradeHeader);
-    
+
     if (upgradeHeader !== 'websocket') {
       console.log('不是 WebSocket 升級請求');
       return new Response('Expected websocket', { status: 400 });
@@ -79,7 +80,7 @@ export class GameRoom {
     console.log('解析的 roomCode:', roomCode);
     console.log('完整 URL:', url.toString());
     console.log('查詢參數:', url.search);
-    
+
     if (!userId) {
       console.log('缺少 userId 參數');
       return new Response('Missing userId', { status: 400 });
@@ -102,7 +103,11 @@ export class GameRoom {
   /**
    * 處理 WebSocket 會話
    */
-  private async handleSession(webSocket: WebSocket, userId: string, roomCode?: string): Promise<void> {
+  private async handleSession(
+    webSocket: WebSocket,
+    userId: string,
+    roomCode?: string
+  ): Promise<void> {
     webSocket.accept();
 
     // 更新活動時間
@@ -119,9 +124,9 @@ export class GameRoom {
       this.sendToClient(webSocket, {
         type: 'gameState',
         data: this.gameState,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-      
+
       // 自動嘗試將玩家加入遊戲
       await this.handlePlayerJoin(webSocket, {});
     } else {
@@ -129,7 +134,7 @@ export class GameRoom {
     }
 
     // 處理訊息
-    webSocket.addEventListener('message', async (event) => {
+    webSocket.addEventListener('message', async event => {
       try {
         const message: WebSocketMessage = JSON.parse(event.data as string);
         this.updateActivity(); // 更新活動時間
@@ -139,7 +144,7 @@ export class GameRoom {
         this.sendToClient(webSocket, {
           type: 'error',
           data: { message: '訊息處理失敗' },
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
     });
@@ -148,7 +153,7 @@ export class GameRoom {
     webSocket.addEventListener('close', () => {
       this.sessions.delete(webSocket);
       this.updateActivity(); // 更新活動時間
-      
+
       // 如果沒有玩家了，更新房間狀態
       if (this.sessions.size === 0) {
         this.handleRoomEmpty();
@@ -156,17 +161,23 @@ export class GameRoom {
     });
 
     // 廣播玩家加入
-    this.broadcast({
-      type: 'join',
-      data: { userId },
-      timestamp: Date.now()
-    }, webSocket);
+    this.broadcast(
+      {
+        type: 'join',
+        data: { userId },
+        timestamp: Date.now(),
+      },
+      webSocket
+    );
   }
 
   /**
    * 處理 WebSocket 訊息
    */
-  private async handleMessage(webSocket: WebSocket, message: WebSocketMessage): Promise<void> {
+  private async handleMessage(
+    webSocket: WebSocket,
+    message: WebSocketMessage
+  ): Promise<void> {
     const session = this.sessions.get(webSocket);
     if (!session) return;
 
@@ -174,15 +185,15 @@ export class GameRoom {
       case 'move':
         await this.handleMove(webSocket, message.data);
         break;
-      
+
       case 'join':
         await this.handlePlayerJoin(webSocket, message.data);
         break;
-      
+
       case 'leave':
         await this.handlePlayerLeave(webSocket);
         break;
-      
+
       case 'chat':
         this.handleChat(webSocket, message.data);
         break;
@@ -192,12 +203,15 @@ export class GameRoom {
   /**
    * 處理玩家落子
    */
-  private async handleMove(webSocket: WebSocket, moveData: { position: Position }): Promise<void> {
+  private async handleMove(
+    webSocket: WebSocket,
+    moveData: { position: Position }
+  ): Promise<void> {
     if (!this.gameState || this.gameState.status !== 'playing') {
       this.sendToClient(webSocket, {
         type: 'error',
         data: { message: '遊戲尚未開始或已結束' },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
       return;
     }
@@ -207,7 +221,7 @@ export class GameRoom {
       this.sendToClient(webSocket, {
         type: 'error',
         data: { message: '您尚未加入遊戲' },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
       return;
     }
@@ -230,13 +244,15 @@ export class GameRoom {
       this.broadcast({
         type: 'gameState',
         data: this.gameState,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
       // 如果是 AI 模式且輪到 AI
-      if (this.gameState.mode === 'ai' && 
-          this.gameState.status === 'playing' && 
-          this.gameState.currentPlayer !== session.player) {
+      if (
+        this.gameState.mode === 'ai' &&
+        this.gameState.status === 'playing' &&
+        this.gameState.currentPlayer !== session.player
+      ) {
         await this.handleAIMove();
       }
 
@@ -245,12 +261,11 @@ export class GameRoom {
         await this.saveGameRecord();
         await this.updateRoomStatus('finished');
       }
-
     } catch (error) {
       this.sendToClient(webSocket, {
         type: 'error',
         data: { message: error instanceof Error ? error.message : '落子失敗' },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     }
   }
@@ -286,10 +301,10 @@ export class GameRoom {
           aiMove: {
             position: aiMove.position,
             reasoning: aiMove.reasoning,
-            confidence: aiMove.confidence
-          }
+            confidence: aiMove.confidence,
+          },
         },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
 
       // 如果遊戲結束，保存記錄
@@ -297,13 +312,12 @@ export class GameRoom {
         await this.saveGameRecord();
         await this.updateRoomStatus('finished');
       }
-
     } catch (error) {
       console.error('AI 落子失敗:', error);
       this.broadcast({
         type: 'error',
         data: { message: 'AI 思考中發生錯誤' },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
     }
   }
@@ -311,38 +325,48 @@ export class GameRoom {
   /**
    * 處理玩家加入
    */
-  private async handlePlayerJoin(webSocket: WebSocket, _joinData: { player?: Player }): Promise<void> {
+  private async handlePlayerJoin(
+    webSocket: WebSocket,
+    _joinData: { player?: Player }
+  ): Promise<void> {
     const session = this.sessions.get(webSocket);
     if (!session) {
       console.log('handlePlayerJoin: 找不到會話');
       return;
     }
 
-    console.log(`玩家嘗試加入: ${session.userId}, 當前遊戲狀態:`, !!this.gameState);
+    console.log(
+      `玩家嘗試加入: ${session.userId}, 當前遊戲狀態:`,
+      !!this.gameState
+    );
 
     if (!this.gameState) {
       console.log('handlePlayerJoin: 遊戲狀態不存在');
       this.sendToClient(webSocket, {
         type: 'error',
         data: { message: '房間尚未創建遊戲' },
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
       return;
     }
 
     // 檢查玩家是否已經在遊戲中
-    if (this.gameState.players.black === session.userId || this.gameState.players.white === session.userId) {
+    if (
+      this.gameState.players.black === session.userId ||
+      this.gameState.players.white === session.userId
+    ) {
       console.log(`玩家 ${session.userId} 已在遊戲中`);
       // 玩家已經在遊戲中，只需要更新會話
-      session.player = this.gameState.players.black === session.userId ? 'black' : 'white';
-      
+      session.player =
+        this.gameState.players.black === session.userId ? 'black' : 'white';
+
       // 重新廣播遊戲狀態以更新前端顯示
       this.broadcast({
         type: 'gameState',
         data: this.gameState,
-        timestamp: Date.now()
+        timestamp: Date.now(),
       });
-      
+
       return;
     }
 
@@ -360,11 +384,13 @@ export class GameRoom {
         assignedPlayer = 'white';
         console.log(`PVP 模式: 分配白棋給 ${session.userId}`);
       } else {
-        console.log(`房間已滿: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`);
+        console.log(
+          `房間已滿: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`
+        );
         this.sendToClient(webSocket, {
           type: 'error',
           data: { message: '房間已滿' },
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
         return;
       }
@@ -375,26 +401,30 @@ export class GameRoom {
     this.gameState.players[assignedPlayer] = session.userId;
 
     // 如果兩名玩家都已加入，開始遊戲
-    if (this.gameState.mode === 'pvp' && 
-        this.gameState.players.black && 
-        this.gameState.players.white) {
+    if (
+      this.gameState.mode === 'pvp' &&
+      this.gameState.players.black &&
+      this.gameState.players.white
+    ) {
       this.gameState.status = 'playing';
       console.log('PVP 遊戲開始: 兩名玩家都已加入');
     } else if (this.gameState.mode === 'ai') {
       this.gameState.status = 'playing';
       console.log('AI 遊戲開始');
     } else {
-      console.log(`等待更多玩家: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`);
+      console.log(
+        `等待更多玩家: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`
+      );
     }
 
     // 更新活動時間
     this.updateActivity();
 
     await this.saveGameState();
-    
+
     // 同步到 D1 資料庫
     await this.syncToD1();
-    
+
     // 更新房間狀態
     await this.updateRoomStatus(this.gameState.status);
 
@@ -402,7 +432,7 @@ export class GameRoom {
     this.broadcast({
       type: 'gameState',
       data: this.gameState,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
   }
 
@@ -414,11 +444,14 @@ export class GameRoom {
     if (!session) return;
 
     // 廣播玩家離開
-    this.broadcast({
-      type: 'leave',
-      data: { userId: session.userId },
-      timestamp: Date.now()
-    }, webSocket);
+    this.broadcast(
+      {
+        type: 'leave',
+        data: { userId: session.userId },
+        timestamp: Date.now(),
+      },
+      webSocket
+    );
 
     // 如果遊戲進行中，暫停遊戲
     if (this.gameState && this.gameState.status === 'playing') {
@@ -435,35 +468,44 @@ export class GameRoom {
   /**
    * 處理聊天訊息
    */
-  private handleChat(webSocket: WebSocket, chatData: { message: string }): void {
+  private handleChat(
+    webSocket: WebSocket,
+    chatData: { message: string }
+  ): void {
     const session = this.sessions.get(webSocket);
     if (!session) return;
 
     // 更新活動時間
     this.updateActivity();
 
-    this.broadcast({
-      type: 'chat',
-      data: {
-        userId: session.userId,
-        message: chatData.message,
-        timestamp: Date.now()
+    this.broadcast(
+      {
+        type: 'chat',
+        data: {
+          userId: session.userId,
+          message: chatData.message,
+          timestamp: Date.now(),
+        },
+        timestamp: Date.now(),
       },
-      timestamp: Date.now()
-    }, webSocket);
+      webSocket
+    );
   }
 
   /**
    * 創建房間
    */
   private async handleCreateRoom(request: Request): Promise<Response> {
-    const { mode, userId } = await request.json() as { mode: 'pvp' | 'ai'; userId: string };
-    
+    const { mode, userId } = (await request.json()) as {
+      mode: 'pvp' | 'ai';
+      userId: string;
+    };
+
     console.log(`創建房間: 模式=${mode}, 創建者=${userId}`);
-    
+
     // 生成房間代碼
     this.roomCode = this.generateRoomCode();
-    
+
     // 創建新遊戲
     this.gameState = GameLogic.createGame(
       crypto.randomUUID(),
@@ -495,12 +537,15 @@ export class GameRoom {
 
     console.log(`房間 ${this.roomCode} 創建成功`);
 
-    return new Response(JSON.stringify({
-      roomCode: this.roomCode,
-      gameId: this.gameState.id
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({
+        roomCode: this.roomCode,
+        gameId: this.gameState.id,
+      }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   /**
@@ -510,29 +555,39 @@ export class GameRoom {
     const url = new URL(request.url);
     const pathParts = url.pathname.split('/');
     const roomCodeFromPath = pathParts[pathParts.length - 1];
-    
-    const { roomCode, userId } = await request.json() as { roomCode: string; userId: string };
-    
+
+    const { roomCode, userId } = (await request.json()) as {
+      roomCode: string;
+      userId: string;
+    };
+
     // 使用路徑中的房間代碼，如果沒有則使用請求體中的
-    const targetRoomCode = roomCodeFromPath && roomCodeFromPath.length === 4 ? roomCodeFromPath : roomCode;
-    
+    const targetRoomCode =
+      roomCodeFromPath && roomCodeFromPath.length === 4
+        ? roomCodeFromPath
+        : roomCode;
+
     console.log(`嘗試加入房間: ${targetRoomCode}, 用戶: ${userId}`);
     console.log(`URL 路徑: ${url.pathname}, 路徑部分:`, pathParts);
-    
+
     await this.loadRoomState();
-    
+
     // 如果本地沒有狀態，嘗試從 D1 資料庫載入
     if (!this.gameState) {
       try {
         console.log(`從資料庫查詢房間: ${targetRoomCode}`);
-        const roomData = await this.env.DB.prepare(`
+        const roomData = await this.env.DB.prepare(
+          `
           SELECT r.*, g.* FROM rooms r 
           JOIN games g ON r.game_id = g.id 
           WHERE r.code = ?1
-        `).bind(targetRoomCode).first();
-        
+        `
+        )
+          .bind(targetRoomCode)
+          .first();
+
         console.log(`資料庫查詢結果:`, roomData ? '找到房間' : '未找到房間');
-        
+
         if (roomData) {
           this.roomCode = roomData.code as string;
           this.gameState = {
@@ -545,13 +600,13 @@ export class GameRoom {
             winner: roomData.winner as 'black' | 'white' | 'draw' | null,
             roomCode: roomData.room_code as string,
             players: {
-              black: roomData.black_player_id as string || undefined,
-              white: roomData.white_player_id as string || undefined
+              black: (roomData.black_player_id as string) || undefined,
+              white: (roomData.white_player_id as string) || undefined,
             },
             createdAt: roomData.created_at as number,
-            updatedAt: roomData.updated_at as number
+            updatedAt: roomData.updated_at as number,
           };
-          
+
           // 保存到本地存儲
           await this.saveGameState();
         }
@@ -559,24 +614,33 @@ export class GameRoom {
         console.error('從資料庫載入房間狀態失敗:', error);
       }
     }
-    
-    console.log(`最終檢查: gameState存在=${!!this.gameState}, roomCode匹配=${this.gameState?.roomCode === targetRoomCode}`);
-    console.log(`當前roomCode: ${this.gameState?.roomCode}, 目標roomCode: ${targetRoomCode}`);
-    
+
+    console.log(
+      `最終檢查: gameState存在=${!!this.gameState}, roomCode匹配=${this.gameState?.roomCode === targetRoomCode}`
+    );
+    console.log(
+      `當前roomCode: ${this.gameState?.roomCode}, 目標roomCode: ${targetRoomCode}`
+    );
+
     if (!this.gameState || this.gameState.roomCode !== targetRoomCode) {
-      console.log(`房間驗證失敗: gameState=${!!this.gameState}, roomCode匹配=${this.gameState?.roomCode === targetRoomCode}`);
+      console.log(
+        `房間驗證失敗: gameState=${!!this.gameState}, roomCode匹配=${this.gameState?.roomCode === targetRoomCode}`
+      );
       return new Response(JSON.stringify({ error: '房間不存在' }), {
         status: 404,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    return new Response(JSON.stringify({
-      gameId: this.gameState.id,
-      gameState: this.gameState
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    return new Response(
+      JSON.stringify({
+        gameId: this.gameState.id,
+        gameState: this.gameState,
+      }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   /**
@@ -584,14 +648,17 @@ export class GameRoom {
    */
   private async handleGetState(): Promise<Response> {
     await this.loadRoomState();
-    
-    return new Response(JSON.stringify({
-      gameState: this.gameState,
-      roomCode: this.roomCode,
-      playerCount: this.sessions.size
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+
+    return new Response(
+      JSON.stringify({
+        gameState: this.gameState,
+        roomCode: this.roomCode,
+        playerCount: this.sessions.size,
+      }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   /**
@@ -599,9 +666,9 @@ export class GameRoom {
    */
   private async handleGetStats(): Promise<Response> {
     const stats = await this.getRoomStats();
-    
+
     return new Response(JSON.stringify(stats), {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -610,13 +677,16 @@ export class GameRoom {
    */
   private async handleForceCleanup(): Promise<Response> {
     await this.forceCleanup();
-    
-    return new Response(JSON.stringify({
-      message: '房間清理已觸發',
-      roomCode: this.roomCode
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+
+    return new Response(
+      JSON.stringify({
+        message: '房間清理已觸發',
+        roomCode: this.roomCode,
+      }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 
   /**
@@ -665,7 +735,7 @@ export class GameRoom {
     } else {
       console.log('本地存儲中沒有遊戲狀態');
     }
-    
+
     const storedRoomCode = await this.state.storage.get('roomCode');
     if (storedRoomCode) {
       this.roomCode = storedRoomCode as string;
@@ -673,17 +743,21 @@ export class GameRoom {
     } else {
       console.log('本地存儲中沒有房間代碼');
     }
-    
+
     // 如果本地沒有狀態但提供了房間代碼，從 D1 資料庫載入
     if (!this.gameState && roomCode && this.env.DB) {
       try {
         console.log(`嘗試從 D1 資料庫載入房間: ${roomCode}`);
-        const roomData = await this.env.DB.prepare(`
+        const roomData = await this.env.DB.prepare(
+          `
           SELECT r.*, g.* FROM rooms r 
           JOIN games g ON r.game_id = g.id 
           WHERE r.code = ?1
-        `).bind(roomCode).first();
-        
+        `
+        )
+          .bind(roomCode)
+          .first();
+
         if (roomData) {
           console.log('從 D1 資料庫找到房間，重建狀態');
           this.roomCode = roomData.code as string;
@@ -697,13 +771,13 @@ export class GameRoom {
             winner: roomData.winner as 'black' | 'white' | 'draw' | null,
             roomCode: roomData.room_code as string,
             players: {
-              black: roomData.black_player_id as string || undefined,
-              white: roomData.white_player_id as string || undefined
+              black: (roomData.black_player_id as string) || undefined,
+              white: (roomData.white_player_id as string) || undefined,
             },
             createdAt: roomData.created_at as number,
-            updatedAt: roomData.updated_at as number
+            updatedAt: roomData.updated_at as number,
           };
-          
+
           // 保存到本地存儲
           await this.saveGameState();
           console.log('狀態已從 D1 恢復並保存到本地存儲');
@@ -714,16 +788,20 @@ export class GameRoom {
         console.error('從 D1 資料庫載入失敗:', error);
       }
     }
-    
+
     // 如果本地沒有狀態，嘗試從 D1 資料庫載入
     if (!this.gameState && this.env.DB && roomCode) {
       try {
-        const roomData = await this.env.DB.prepare(`
+        const roomData = await this.env.DB.prepare(
+          `
           SELECT r.*, g.* FROM rooms r 
           JOIN games g ON r.game_id = g.id 
           WHERE r.code = ?1
-        `).bind(roomCode).first();
-        
+        `
+        )
+          .bind(roomCode)
+          .first();
+
         if (roomData) {
           this.roomCode = roomData.code as string;
           this.gameState = {
@@ -736,13 +814,13 @@ export class GameRoom {
             winner: roomData.winner as 'black' | 'white' | 'draw' | null,
             roomCode: roomData.room_code as string,
             players: {
-              black: roomData.black_player_id as string || undefined,
-              white: roomData.white_player_id as string || undefined
+              black: (roomData.black_player_id as string) || undefined,
+              white: (roomData.white_player_id as string) || undefined,
             },
             createdAt: roomData.created_at as number,
-            updatedAt: roomData.updated_at as number
+            updatedAt: roomData.updated_at as number,
           };
-          
+
           // 保存到本地存儲
           await this.saveGameState();
         }
@@ -758,7 +836,9 @@ export class GameRoom {
   private async saveGameState(): Promise<void> {
     if (this.gameState) {
       await this.state.storage.put('gameState', this.gameState);
-      console.log(`保存遊戲狀態: ${this.gameState.id}, 玩家: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`);
+      console.log(
+        `保存遊戲狀態: ${this.gameState.id}, 玩家: 黑棋=${this.gameState.players.black}, 白棋=${this.gameState.players.white}`
+      );
     }
     if (this.roomCode) {
       await this.state.storage.put('roomCode', this.roomCode);
@@ -774,38 +854,46 @@ export class GameRoom {
 
     try {
       console.log('開始保存遊戲記錄:', this.gameState.id);
-      
+
       const gameDuration = this.gameState.updatedAt - this.gameState.createdAt;
-      
+
       // 為每個玩家創建遊戲記錄
       const players = [
         { id: this.gameState.players.black, color: 'black' },
-        { id: this.gameState.players.white, color: 'white' }
+        { id: this.gameState.players.white, color: 'white' },
       ].filter(p => p.id); // 過濾掉空的玩家
 
       for (const player of players) {
         if (!player.id) continue;
-        
+
         // 檢查用戶是否存在，如果不存在則創建
-        let userExists = await this.env.DB.prepare(`
+        let userExists = await this.env.DB.prepare(
+          `
           SELECT id FROM users WHERE id = ?1
-        `).bind(player.id).first();
-        
+        `
+        )
+          .bind(player.id)
+          .first();
+
         if (!userExists) {
           console.log(`用戶 ${player.id} 不存在，正在創建...`);
           // 創建新用戶
-          await this.env.DB.prepare(`
+          await this.env.DB.prepare(
+            `
             INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
             VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
-          `).bind(
-            player.id,
-            `匿名玩家_${player.id.substring(0, 5)}`, // 生成用戶名
-            Date.now(),
-            Date.now()
-          ).run();
+          `
+          )
+            .bind(
+              player.id,
+              `匿名玩家_${player.id.substring(0, 5)}`, // 生成用戶名
+              Date.now(),
+              Date.now()
+            )
+            .run();
           console.log(`已創建用戶: ${player.id}`);
         }
-        
+
         // 確定遊戲結果
         let result: 'win' | 'loss' | 'draw';
         if (this.gameState.winner === 'draw') {
@@ -815,14 +903,18 @@ export class GameRoom {
         } else {
           result = 'loss';
         }
-        
+
         // 獲取玩家當前評分
-        const userResult = await this.env.DB.prepare(`
+        const userResult = await this.env.DB.prepare(
+          `
           SELECT rating FROM users WHERE id = ?1
-        `).bind(player.id).first();
-        
-        const currentRating = userResult?.rating as number || 1200;
-        
+        `
+        )
+          .bind(player.id)
+          .first();
+
+        const currentRating = (userResult?.rating as number) || 1200;
+
         // 計算評分變化（簡化版 ELO）
         let ratingChange = 0;
         if (result === 'win') {
@@ -832,72 +924,94 @@ export class GameRoom {
         } else {
           ratingChange = 0;
         }
-        
+
         // 獲取對手 ID，確保對手也存在
         const opponentId = players.find(p => p.id !== player.id)?.id;
         if (opponentId) {
-          const opponentExists = await this.env.DB.prepare(`
+          const opponentExists = await this.env.DB.prepare(
+            `
             SELECT id FROM users WHERE id = ?1
-          `).bind(opponentId).first();
-          
+          `
+          )
+            .bind(opponentId)
+            .first();
+
           if (!opponentExists) {
             console.log(`對手 ${opponentId} 不存在，正在創建...`);
-            await this.env.DB.prepare(`
+            await this.env.DB.prepare(
+              `
               INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
               VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
-            `).bind(
-              opponentId,
-              `匿名玩家_${opponentId.substring(0, 5)}`,
-              Date.now(),
-              Date.now()
-            ).run();
+            `
+            )
+              .bind(
+                opponentId,
+                `匿名玩家_${opponentId.substring(0, 5)}`,
+                Date.now(),
+                Date.now()
+              )
+              .run();
             console.log(`已創建對手: ${opponentId}`);
           }
         }
-        
+
         // 保存遊戲記錄
-        await this.env.DB.prepare(`
+        await this.env.DB.prepare(
+          `
           INSERT INTO game_records (
             id, game_id, user_id, opponent_id, mode, result, 
             moves, duration, rating, rating_change, created_at
           ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-        `).bind(
-          crypto.randomUUID(),
-          this.gameState.id,
-          player.id,
-          opponentId || null,
-          this.gameState.mode,
-          result,
-          JSON.stringify(this.gameState.moves),
-          gameDuration,
-          currentRating,
-          ratingChange,
-          Date.now()
-        ).run();
-        
+        `
+        )
+          .bind(
+            crypto.randomUUID(),
+            this.gameState.id,
+            player.id,
+            opponentId || null,
+            this.gameState.mode,
+            result,
+            JSON.stringify(this.gameState.moves),
+            gameDuration,
+            currentRating,
+            ratingChange,
+            Date.now()
+          )
+          .run();
+
         // 更新用戶戰績
-        const updateQuery = result === 'win' ? 
-          `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3` :
-          result === 'loss' ?
-          `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3` :
-          `UPDATE users SET draws = draws + 1, updated_at = ?2 WHERE id = ?3`;
-        
+        const updateQuery =
+          result === 'win'
+            ? `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
+            : result === 'loss'
+              ? `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
+              : `UPDATE users SET draws = draws + 1, updated_at = ?2 WHERE id = ?3`;
+
         if (result === 'draw') {
-          await this.env.DB.prepare(updateQuery).bind(Date.now(), player.id).run();
+          await this.env.DB.prepare(updateQuery)
+            .bind(Date.now(), player.id)
+            .run();
         } else {
-          await this.env.DB.prepare(updateQuery).bind(ratingChange, Date.now(), player.id).run();
+          await this.env.DB.prepare(updateQuery)
+            .bind(ratingChange, Date.now(), player.id)
+            .run();
         }
-        
-        console.log(`已更新玩家 ${player.id} 的戰績: ${result}, 評分變化: ${ratingChange}`);
+
+        console.log(
+          `已更新玩家 ${player.id} 的戰績: ${result}, 評分變化: ${ratingChange}`
+        );
       }
-      
+
       // 更新遊戲狀態為已完成
-      await this.env.DB.prepare(`
+      await this.env.DB.prepare(
+        `
         UPDATE games SET status = 'finished', winner = ?1, updated_at = ?2 WHERE id = ?3
-      `).bind(this.gameState.winner, Date.now(), this.gameState.id).run();
-      
+      `
+      )
+        .bind(this.gameState.winner, Date.now(), this.gameState.id)
+        .run();
+
       console.log('遊戲記錄保存完成');
-      
     } catch (error) {
       console.error('保存遊戲記錄失敗:', error);
     }
@@ -915,16 +1029,16 @@ export class GameRoom {
    */
   private async handleRoomEmpty(): Promise<void> {
     console.log(`房間 ${this.roomCode} 已空閒，更新 D1 狀態`);
-    
+
     if (this.gameState) {
       // 更新遊戲狀態為等待中
       this.gameState.status = 'waiting';
       await this.saveGameState();
-      
+
       // 同步到 D1 資料庫
       await this.syncToD1();
     }
-    
+
     // 更新房間狀態
     await this.updateRoomStatus('waiting');
   }
@@ -936,7 +1050,7 @@ export class GameRoom {
     if (this.cleanupTimer) {
       clearTimeout(this.cleanupTimer);
     }
-    
+
     this.cleanupTimer = setTimeout(() => {
       this.checkAndCleanup();
     }, this.CLEANUP_CHECK_INTERVAL);
@@ -948,12 +1062,19 @@ export class GameRoom {
   private async checkAndCleanup(): Promise<void> {
     const now = Date.now();
     const timeSinceLastActivity = now - this.lastActivityTime;
-    
-    console.log(`檢查房間 ${this.roomCode} 清理條件: 無活動時間=${timeSinceLastActivity}ms, 會話數=${this.sessions.size}`);
-    
+
+    console.log(
+      `檢查房間 ${this.roomCode} 清理條件: 無活動時間=${timeSinceLastActivity}ms, 會話數=${this.sessions.size}`
+    );
+
     // 如果房間無活動超過設定時間且沒有會話，則清理
-    if (timeSinceLastActivity > this.INACTIVE_TIMEOUT && this.sessions.size === 0) {
-      console.log(`房間 ${this.roomCode} 已閒置超過 ${this.INACTIVE_TIMEOUT}ms，開始清理`);
+    if (
+      timeSinceLastActivity > this.INACTIVE_TIMEOUT &&
+      this.sessions.size === 0
+    ) {
+      console.log(
+        `房間 ${this.roomCode} 已閒置超過 ${this.INACTIVE_TIMEOUT}ms，開始清理`
+      );
       await this.cleanupRoom();
     } else {
       // 重新設置計時器
@@ -967,21 +1088,20 @@ export class GameRoom {
   private async cleanupRoom(): Promise<void> {
     try {
       console.log(`開始清理房間 ${this.roomCode}`);
-      
+
       // 如果遊戲未完成，保存最終狀態到 D1
       if (this.gameState && this.gameState.status !== 'finished') {
         await this.syncToD1();
         await this.updateRoomStatus('waiting');
       }
-      
+
       // 清理本地存儲
       await this.state.storage.deleteAll();
-      
+
       console.log(`房間 ${this.roomCode} 清理完成`);
-      
+
       // 通知 Cloudflare 可以釋放這個 Durable Object
       // 注意：實際的釋放由 Cloudflare 的垃圾回收機制處理
-      
     } catch (error) {
       console.error(`清理房間 ${this.roomCode} 失敗:`, error);
     }
@@ -992,27 +1112,31 @@ export class GameRoom {
    */
   private async syncToD1(): Promise<void> {
     if (!this.gameState || !this.env.DB) return;
-    
+
     try {
       console.log(`同步遊戲狀態到 D1: ${this.gameState.id}`);
-      
-      await this.env.DB.prepare(`
+
+      await this.env.DB.prepare(
+        `
         UPDATE games 
         SET board_state = ?1, current_player = ?2, status = ?3, 
             black_player_id = ?4, white_player_id = ?5, 
             winner = ?6, updated_at = ?7
         WHERE id = ?8
-      `).bind(
-        JSON.stringify(this.gameState.board),
-        this.gameState.currentPlayer,
-        this.gameState.status,
-        this.gameState.players.black || null,
-        this.gameState.players.white || null,
-        this.gameState.winner || null,
-        Date.now(),
-        this.gameState.id
-      ).run();
-      
+      `
+      )
+        .bind(
+          JSON.stringify(this.gameState.board),
+          this.gameState.currentPlayer,
+          this.gameState.status,
+          this.gameState.players.black || null,
+          this.gameState.players.white || null,
+          this.gameState.winner || null,
+          Date.now(),
+          this.gameState.id
+        )
+        .run();
+
       console.log('D1 資料庫同步完成');
     } catch (error) {
       console.error('同步到 D1 資料庫失敗:', error);
@@ -1022,16 +1146,22 @@ export class GameRoom {
   /**
    * 更新房間狀態
    */
-  private async updateRoomStatus(status: 'waiting' | 'playing' | 'finished'): Promise<void> {
+  private async updateRoomStatus(
+    status: 'waiting' | 'playing' | 'finished'
+  ): Promise<void> {
     if (!this.roomCode || !this.env.DB) return;
-    
+
     try {
-      await this.env.DB.prepare(`
+      await this.env.DB.prepare(
+        `
         UPDATE rooms 
         SET status = ?1 
         WHERE code = ?2
-      `).bind(status, this.roomCode).run();
-      
+      `
+      )
+        .bind(status, this.roomCode)
+        .run();
+
       console.log(`房間 ${this.roomCode} 狀態已更新為: ${status}`);
     } catch (error) {
       console.error('更新房間狀態失敗:', error);
@@ -1053,7 +1183,9 @@ export class GameRoom {
       playerCount: this.sessions.size,
       lastActivity: this.lastActivityTime,
       gameState: this.gameState,
-      isActive: this.sessions.size > 0 || (Date.now() - this.lastActivityTime) < this.INACTIVE_TIMEOUT
+      isActive:
+        this.sessions.size > 0 ||
+        Date.now() - this.lastActivityTime < this.INACTIVE_TIMEOUT,
     };
   }
 

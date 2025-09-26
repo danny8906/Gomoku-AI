@@ -7,11 +7,14 @@ import { Env } from '../types';
 /**
  * 驗證管理員密碼
  */
-export async function verifyAdminPassword(token: string, env: Env): Promise<boolean> {
+export async function verifyAdminPassword(
+  token: string,
+  env: Env
+): Promise<boolean> {
   try {
     // 從 KV 中獲取正確的管理員密碼
     const storedPassword = await env.gomoku_admin.get('admin_password');
-    
+
     if (!storedPassword) {
       console.error('管理員密碼未設置');
       return false;
@@ -28,7 +31,10 @@ export async function verifyAdminPassword(token: string, env: Env): Promise<bool
 /**
  * 設置管理員密碼
  */
-export async function setAdminPassword(password: string, env: Env): Promise<boolean> {
+export async function setAdminPassword(
+  password: string,
+  env: Env
+): Promise<boolean> {
   try {
     await env.gomoku_admin.put('admin_password', password);
     return true;

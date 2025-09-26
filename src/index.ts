@@ -15,12 +15,20 @@ import { corsHeaders } from './utils/cors';
 export { GameRoom } from './durable-objects/GameRoom';
 
 // Cron Job 處理器
-export async function scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+export async function scheduled(
+  event: ScheduledEvent,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<void> {
   await handleHourlyCleanup(env, ctx);
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext
+  ): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -28,7 +36,7 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 200,
-        headers: corsHeaders
+        headers: corsHeaders,
       });
     }
 
@@ -37,34 +45,36 @@ export default {
       if (path.startsWith('/api/game')) {
         return await handleGameAPI(request, env, ctx);
       }
-      
+
       if (path.startsWith('/api/user')) {
         return await handleUserAPI(request, env, ctx);
       }
-      
+
       if (path.startsWith('/api/room')) {
         return await handleRoomAPI(request, env, ctx);
       }
-      
+
       if (path.startsWith('/api/admin')) {
         return await handleAdminAPI(request, env, ctx);
       }
 
       // 靜態資源和前端頁面
       return await serveStaticAssets(request, env);
-      
     } catch (error) {
       console.error('處理請求時發生錯誤:', error);
-      return new Response(JSON.stringify({ 
-        error: '伺服器內部錯誤',
-        message: error instanceof Error ? error.message : '未知錯誤'
-      }), {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders
+      return new Response(
+        JSON.stringify({
+          error: '伺服器內部錯誤',
+          message: error instanceof Error ? error.message : '未知錯誤',
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
         }
-      });
+      );
     }
-  }
+  },
 };

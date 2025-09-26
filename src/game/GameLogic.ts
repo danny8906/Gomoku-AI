@@ -11,7 +11,11 @@ export class GameLogic {
   /**
    * 創建新遊戲
    */
-  static createGame(gameId: string, mode: 'pvp' | 'ai', roomCode?: string): GameState {
+  static createGame(
+    gameId: string,
+    mode: 'pvp' | 'ai',
+    roomCode?: string
+  ): GameState {
     const board: Player[][] = Array(this.BOARD_SIZE)
       .fill(null)
       .map(() => Array(this.BOARD_SIZE).fill(null));
@@ -27,7 +31,7 @@ export class GameLogic {
       roomCode,
       players: {},
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
   }
 
@@ -53,7 +57,11 @@ export class GameLogic {
   /**
    * 執行落子
    */
-  static makeMove(gameState: GameState, position: Position, player: Player): GameState {
+  static makeMove(
+    gameState: GameState,
+    position: Position,
+    player: Player
+  ): GameState {
     if (!this.isValidPosition(position)) {
       throw new Error('無效的位置');
     }
@@ -81,7 +89,7 @@ export class GameLogic {
     const move: Move = {
       player,
       position,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     // 檢查是否獲勝
@@ -92,11 +100,12 @@ export class GameLogic {
     const newGameState: GameState = {
       ...gameState,
       board: newBoard,
-      currentPlayer: winner || isDraw ? gameState.currentPlayer : this.getOpponent(player),
+      currentPlayer:
+        winner || isDraw ? gameState.currentPlayer : this.getOpponent(player),
       status: winner || isDraw ? 'finished' : 'playing',
       moves: [...gameState.moves, move],
       winner: winner || (isDraw ? 'draw' : null),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
     return newGameState;
@@ -105,12 +114,16 @@ export class GameLogic {
   /**
    * 檢查是否獲勝
    */
-  static checkWinner(board: Player[][], lastMove: Position, player: Player): Player | null {
+  static checkWinner(
+    board: Player[][],
+    lastMove: Position,
+    player: Player
+  ): Player | null {
     const directions = [
-      [0, 1],   // 水平
-      [1, 0],   // 垂直
-      [1, 1],   // 對角線 \
-      [1, -1]   // 對角線 /
+      [0, 1], // 水平
+      [1, 0], // 垂直
+      [1, 1], // 對角線 \
+      [1, -1], // 對角線 /
     ];
 
     for (const direction of directions) {
@@ -122,8 +135,10 @@ export class GameLogic {
       let row = lastMove.row + dx;
       let col = lastMove.col + dy;
       while (
-        row >= 0 && row < this.BOARD_SIZE &&
-        col >= 0 && col < this.BOARD_SIZE &&
+        row >= 0 &&
+        row < this.BOARD_SIZE &&
+        col >= 0 &&
+        col < this.BOARD_SIZE &&
         board[row]?.[col] === player
       ) {
         count++;
@@ -135,8 +150,10 @@ export class GameLogic {
       row = lastMove.row - dx;
       col = lastMove.col - dy;
       while (
-        row >= 0 && row < this.BOARD_SIZE &&
-        col >= 0 && col < this.BOARD_SIZE &&
+        row >= 0 &&
+        row < this.BOARD_SIZE &&
+        col >= 0 &&
+        col < this.BOARD_SIZE &&
         board[row]?.[col] === player
       ) {
         count++;
@@ -217,8 +234,10 @@ export class GameLogic {
           const nr = row + dr;
           const nc = col + dc;
           if (
-            nr >= 0 && nr < this.BOARD_SIZE &&
-            nc >= 0 && nc < this.BOARD_SIZE &&
+            nr >= 0 &&
+            nr < this.BOARD_SIZE &&
+            nc >= 0 &&
+            nc < this.BOARD_SIZE &&
             board[nr]?.[nc] !== null
           ) {
             return true;
@@ -250,10 +269,17 @@ export class GameLogic {
   /**
    * 評估位置的重要性（用於 AI 決策）
    */
-  static evaluatePosition(board: Player[][], position: Position, player: Player): number {
+  static evaluatePosition(
+    board: Player[][],
+    position: Position,
+    player: Player
+  ): number {
     let score = 0;
     const directions = [
-      [0, 1], [1, 0], [1, 1], [1, -1]
+      [0, 1],
+      [1, 0],
+      [1, 1],
+      [1, -1],
     ];
 
     for (const [dx, dy] of directions) {
@@ -276,14 +302,20 @@ export class GameLogic {
     player: Player
   ): string {
     let line = '';
-    
+
     // 向負方向延伸
     for (let i = -4; i < 0; i++) {
       const row = position.row + i * dx;
       const col = position.col + i * dy;
-      if (row >= 0 && row < this.BOARD_SIZE && col >= 0 && col < this.BOARD_SIZE) {
+      if (
+        row >= 0 &&
+        row < this.BOARD_SIZE &&
+        col >= 0 &&
+        col < this.BOARD_SIZE
+      ) {
         const cell = board[row]?.[col];
-        line += cell === player ? 'O' : cell === this.getOpponent(player) ? 'X' : '.';
+        line +=
+          cell === player ? 'O' : cell === this.getOpponent(player) ? 'X' : '.';
       } else {
         line += 'X'; // 邊界視為對手棋子
       }
@@ -296,9 +328,15 @@ export class GameLogic {
     for (let i = 1; i <= 4; i++) {
       const row = position.row + i * dx;
       const col = position.col + i * dy;
-      if (row >= 0 && row < this.BOARD_SIZE && col >= 0 && col < this.BOARD_SIZE) {
+      if (
+        row >= 0 &&
+        row < this.BOARD_SIZE &&
+        col >= 0 &&
+        col < this.BOARD_SIZE
+      ) {
         const cell = board[row]?.[col];
-        line += cell === player ? 'O' : cell === this.getOpponent(player) ? 'X' : '.';
+        line +=
+          cell === player ? 'O' : cell === this.getOpponent(player) ? 'X' : '.';
       } else {
         line += 'X'; // 邊界視為對手棋子
       }
@@ -315,24 +353,34 @@ export class GameLogic {
 
     // 五連
     if (line.includes('OOOOO')) score += 100000;
-    
+
     // 活四
     if (line.includes('.OOOO.')) score += 10000;
-    
+
     // 沖四
     if (line.includes('XOOOO.') || line.includes('.OOOOX')) score += 1000;
-    
+
     // 活三
     if (line.includes('.OOO.')) score += 1000;
-    
+
     // 眠三
-    if (line.includes('.OOO.') || line.includes('XOO.O.') || line.includes('.O.OOX')) score += 100;
-    
+    if (
+      line.includes('.OOO.') ||
+      line.includes('XOO.O.') ||
+      line.includes('.O.OOX')
+    )
+      score += 100;
+
     // 活二
     if (line.includes('.OO.')) score += 100;
-    
+
     // 眠二
-    if (line.includes('.OO.') || line.includes('XO.O.') || line.includes('.O.OX')) score += 10;
+    if (
+      line.includes('.OO.') ||
+      line.includes('XO.O.') ||
+      line.includes('.O.OX')
+    )
+      score += 10;
 
     return score;
   }

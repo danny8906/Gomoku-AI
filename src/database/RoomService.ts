@@ -14,31 +14,36 @@ export class RoomService {
   /**
    * 獲取所有活躍房間
    */
-  async getActiveRooms(): Promise<Array<{
-    roomCode: string;
-    gameId: string;
-    status: 'waiting' | 'playing' | 'finished';
-    playerCount: number;
-    lastActivity: number;
-    createdAt: number;
-  }>> {
+  async getActiveRooms(): Promise<
+    Array<{
+      roomCode: string;
+      gameId: string;
+      status: 'waiting' | 'playing' | 'finished';
+      playerCount: number;
+      lastActivity: number;
+      createdAt: number;
+    }>
+  > {
     try {
-      const results = await this.env.DB.prepare(`
+      const results = await this.env.DB.prepare(
+        `
         SELECT r.code, r.game_id, r.status, r.created_at,
                g.black_player_id, g.white_player_id, g.updated_at
         FROM rooms r
         JOIN games g ON r.game_id = g.id
         WHERE r.status IN ('waiting', 'playing')
         ORDER BY g.updated_at DESC
-      `).all();
+      `
+      ).all();
 
       return results.results.map(result => ({
         roomCode: result.code as string,
         gameId: result.game_id as string,
         status: result.status as 'waiting' | 'playing' | 'finished',
-        playerCount: (result.black_player_id ? 1 : 0) + (result.white_player_id ? 1 : 0),
+        playerCount:
+          (result.black_player_id ? 1 : 0) + (result.white_player_id ? 1 : 0),
         lastActivity: result.updated_at as number,
-        createdAt: result.created_at as number
+        createdAt: result.created_at as number,
       }));
     } catch (error) {
       console.error('獲取活躍房間失敗:', error);
@@ -49,29 +54,37 @@ export class RoomService {
   /**
    * 獲取閒置房間（超過指定時間無活動）
    */
-  async getIdleRooms(inactiveMinutes: number = 30): Promise<Array<{
-    roomCode: string;
-    gameId: string;
-    lastActivity: number;
-    inactiveMinutes: number;
-  }>> {
+  async getIdleRooms(inactiveMinutes: number = 30): Promise<
+    Array<{
+      roomCode: string;
+      gameId: string;
+      lastActivity: number;
+      inactiveMinutes: number;
+    }>
+  > {
     try {
-      const cutoffTime = Date.now() - (inactiveMinutes * 60 * 1000);
-      
-      const results = await this.env.DB.prepare(`
+      const cutoffTime = Date.now() - inactiveMinutes * 60 * 1000;
+
+      const results = await this.env.DB.prepare(
+        `
         SELECT r.code, r.game_id, g.updated_at
         FROM rooms r
         JOIN games g ON r.game_id = g.id
         WHERE r.status IN ('waiting', 'playing')
         AND g.updated_at < ?1
         ORDER BY g.updated_at ASC
-      `).bind(cutoffTime).all();
+      `
+      )
+        .bind(cutoffTime)
+        .all();
 
       return results.results.map(result => ({
         roomCode: result.code as string,
         gameId: result.game_id as string,
         lastActivity: result.updated_at as number,
-        inactiveMinutes: Math.floor((Date.now() - result.updated_at) / (60 * 1000))
+        inactiveMinutes: Math.floor(
+          (Date.now() - result.updated_at) / (60 * 1000)
+        ),
       }));
     } catch (error) {
       console.error('獲取閒置房間失敗:', error);
@@ -83,19 +96,23 @@ export class RoomService {
    * 批量更新房間狀態
    */
   async updateRoomStatuses(
-    roomCodes: string[], 
+    roomCodes: string[],
     status: 'waiting' | 'playing' | 'finished'
   ): Promise<number> {
     if (roomCodes.length === 0) return 0;
 
     try {
       const placeholders = roomCodes.map(() => '?').join(',');
-      
-      const result = await this.env.DB.prepare(`
+
+      const result = await this.env.DB.prepare(
+        `
         UPDATE rooms 
         SET status = ?1 
         WHERE code IN (${placeholders})
-      `).bind(status, ...roomCodes).run();
+      `
+      )
+        .bind(status, ...roomCodes)
+        .run();
 
       console.log(`已更新 ${result.changes} 個房間狀態為: ${status}`);
       return result.changes;
@@ -114,32 +131,36 @@ export class RoomService {
   }> {
     try {
       const idleRooms = await this.getIdleRooms(inactiveMinutes);
-      
+
       if (idleRooms.length === 0) {
         return { cleaned: 0, rooms: [] };
       }
 
       const roomCodes = idleRooms.map(room => room.roomCode);
-      
+
       // 更新房間狀態為等待中
       await this.updateRoomStatuses(roomCodes, 'waiting');
-      
+
       // 更新對應的遊戲狀態
       const placeholders = roomCodes.map(() => '?').join(',');
-      await this.env.DB.prepare(`
+      await this.env.DB.prepare(
+        `
         UPDATE games 
         SET status = 'waiting', updated_at = ?1
         WHERE id IN (
           SELECT game_id FROM rooms 
           WHERE code IN (${placeholders})
         )
-      `).bind(Date.now(), ...roomCodes).run();
+      `
+      )
+        .bind(Date.now(), ...roomCodes)
+        .run();
 
       console.log(`已清理 ${roomCodes.length} 個閒置房間`);
-      
+
       return {
         cleaned: roomCodes.length,
-        rooms: roomCodes
+        rooms: roomCodes,
       };
     } catch (error) {
       console.error('清理閒置房間失敗:', error);
@@ -160,32 +181,43 @@ export class RoomService {
   }> {
     try {
       const [totalResult, statusResult, idleResult] = await Promise.all([
-        this.env.DB.prepare(`
+        this.env.DB.prepare(
+          `
           SELECT COUNT(*) as total FROM rooms
-        `).first(),
-        
-        this.env.DB.prepare(`
+        `
+        ).first(),
+
+        this.env.DB.prepare(
+          `
           SELECT status, COUNT(*) as count 
           FROM rooms 
           GROUP BY status
-        `).all(),
-        
-        this.env.DB.prepare(`
+        `
+        ).all(),
+
+        this.env.DB.prepare(
+          `
           SELECT COUNT(*) as idle
           FROM rooms r
           JOIN games g ON r.game_id = g.id
           WHERE r.status IN ('waiting', 'playing')
           AND g.updated_at < ?1
-        `).bind(Date.now() - (30 * 60 * 1000)).first()
+        `
+        )
+          .bind(Date.now() - 30 * 60 * 1000)
+          .first(),
       ]);
 
-      const totalRooms = totalResult?.total as number || 0;
-      const idleRooms = idleResult?.idle as number || 0;
-      
-      const statusCounts = statusResult.results.reduce((acc, row) => {
-        acc[row.status as string] = row.count as number;
-        return acc;
-      }, {} as Record<string, number>);
+      const totalRooms = (totalResult?.total as number) || 0;
+      const idleRooms = (idleResult?.idle as number) || 0;
+
+      const statusCounts = statusResult.results.reduce(
+        (acc, row) => {
+          acc[row.status as string] = row.count as number;
+          return acc;
+        },
+        {} as Record<string, number>
+      );
 
       return {
         totalRooms,
@@ -193,7 +225,7 @@ export class RoomService {
         waitingRooms: statusCounts.waiting || 0,
         playingRooms: statusCounts.playing || 0,
         finishedRooms: statusCounts.finished || 0,
-        idleRooms
+        idleRooms,
       };
     } catch (error) {
       console.error('獲取房間統計失敗:', error);
@@ -203,7 +235,7 @@ export class RoomService {
         waitingRooms: 0,
         playingRooms: 0,
         finishedRooms: 0,
-        idleRooms: 0
+        idleRooms: 0,
       };
     }
   }
@@ -214,20 +246,28 @@ export class RoomService {
   async forceCleanupRoom(roomCode: string): Promise<boolean> {
     try {
       // 更新房間狀態
-      await this.env.DB.prepare(`
+      await this.env.DB.prepare(
+        `
         UPDATE rooms 
         SET status = 'waiting' 
         WHERE code = ?1
-      `).bind(roomCode).run();
+      `
+      )
+        .bind(roomCode)
+        .run();
 
       // 更新遊戲狀態
-      await this.env.DB.prepare(`
+      await this.env.DB.prepare(
+        `
         UPDATE games 
         SET status = 'waiting', updated_at = ?1
         WHERE id = (
           SELECT game_id FROM rooms WHERE code = ?2
         )
-      `).bind(Date.now(), roomCode).run();
+      `
+      )
+        .bind(Date.now(), roomCode)
+        .run();
 
       console.log(`已強制清理房間: ${roomCode}`);
       return true;
@@ -254,18 +294,22 @@ export class RoomService {
     isActive: boolean;
   } | null> {
     try {
-      const result = await this.env.DB.prepare(`
+      const result = await this.env.DB.prepare(
+        `
         SELECT r.code, r.game_id, r.status, r.created_at,
                g.mode, g.black_player_id, g.white_player_id, g.updated_at
         FROM rooms r
         JOIN games g ON r.game_id = g.id
         WHERE r.code = ?1
-      `).bind(roomCode).first();
+      `
+      )
+        .bind(roomCode)
+        .first();
 
       if (!result) return null;
 
       const lastActivity = result.updated_at as number;
-      const isActive = (Date.now() - lastActivity) < (30 * 60 * 1000); // 30分鐘內有活動
+      const isActive = Date.now() - lastActivity < 30 * 60 * 1000; // 30分鐘內有活動
 
       return {
         roomCode: result.code as string,
@@ -274,11 +318,11 @@ export class RoomService {
         mode: result.mode as string,
         players: {
           black: result.black_player_id as string | null,
-          white: result.white_player_id as string | null
+          white: result.white_player_id as string | null,
         },
         createdAt: result.created_at as number,
         lastActivity,
-        isActive
+        isActive,
       };
     } catch (error) {
       console.error(`獲取房間 ${roomCode} 詳細信息失敗:`, error);
@@ -295,18 +339,18 @@ export class RoomService {
     statistics: any;
   }> {
     console.log('開始執行定期房間清理任務');
-    
+
     const cleanupResult = await this.cleanupIdleRooms(30); // 30分鐘無活動
     const statistics = await this.getRoomStatistics();
-    
+
     console.log('定期清理任務完成:', {
       cleaned: cleanupResult.cleaned,
-      statistics
+      statistics,
     });
-    
+
     return {
       ...cleanupResult,
-      statistics
+      statistics,
     };
   }
 }

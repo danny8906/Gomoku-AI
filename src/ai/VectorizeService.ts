@@ -15,14 +15,17 @@ export class VectorizeService {
   /**
    * 將遊戲狀態轉換為向量並儲存
    */
-  async storeGameState(gameState: GameState, advantage?: string): Promise<void> {
+  async storeGameState(
+    gameState: GameState,
+    advantage?: string
+  ): Promise<void> {
     try {
       // 生成棋盤狀態的文本描述
       const boardDescription = this.generateBoardDescription(gameState);
-      
+
       // 使用 Text Embeddings 生成向量
       const embedding = await this.generateEmbedding(boardDescription);
-      
+
       // 創建向量物件
       const vector: GameVector = {
         id: `${gameState.id}-${gameState.moves.length}`,
@@ -32,13 +35,13 @@ export class VectorizeService {
           boardState: GameLogic.boardToString(gameState.board),
           moveCount: gameState.moves.length,
           advantage: advantage || 'unknown',
-          timestamp: Date.now()
-        }
+          timestamp: Date.now(),
+        },
       };
 
       // 儲存到 Vectorize
       await this.env.VECTORIZE.upsert([vector]);
-      
+
       console.log(`已儲存遊戲狀態向量: ${vector.id}`);
     } catch (error) {
       console.error('儲存遊戲狀態到 Vectorize 失敗:', error);
@@ -62,7 +65,7 @@ export class VectorizeService {
       const results = await this.env.VECTORIZE.query(queryVector, {
         topK: limit,
         returnMetadata: true,
-        returnValues: true
+        returnValues: true,
       });
 
       // 過濾結果，只返回相似度高於閾值的
@@ -71,9 +74,8 @@ export class VectorizeService {
         .map(match => ({
           id: match.id,
           values: match.values || [],
-          metadata: match.metadata as GameVector['metadata']
+          metadata: match.metadata as GameVector['metadata'],
         }));
-
     } catch (error) {
       console.error('查找相似遊戲局面失敗:', error);
       return [];
@@ -90,23 +92,26 @@ export class VectorizeService {
     try {
       // 查找相似局面
       const similarGames = await this.findSimilarGameStates(gameState, 5, 0.75);
-      
+
       if (similarGames.length === 0) {
         return {
           suggestions: [],
-          reasoning: ['沒有找到相似的歷史局面']
+          reasoning: ['沒有找到相似的歷史局面'],
         };
       }
 
       // 分析相似局面中的下一步走法
-      const moveFrequency = new Map<string, { count: number; positions: Position[] }>();
+      const moveFrequency = new Map<
+        string,
+        { count: number; positions: Position[] }
+      >();
       const reasoning: string[] = [];
 
       for (const similar of similarGames) {
         // 這裡需要從資料庫獲取完整的遊戲記錄
         // 暫時使用模擬數據
         const nextMoves = this.simulateNextMovesFromHistory(similar);
-        
+
         for (const move of nextMoves) {
           const key = `${move.row},${move.col}`;
           if (!moveFrequency.has(key)) {
@@ -124,17 +129,18 @@ export class VectorizeService {
         .slice(0, 3);
 
       const suggestions = sortedMoves.map(([_, data]) => data.positions[0]);
-      
+
       reasoning.push(`基於 ${similarGames.length} 個相似局面的分析`);
-      reasoning.push(`最常見的走法出現頻率: ${sortedMoves.map(([_, data]) => data.count).join(', ')}`);
+      reasoning.push(
+        `最常見的走法出現頻率: ${sortedMoves.map(([_, data]) => data.count).join(', ')}`
+      );
 
       return { suggestions, reasoning };
-
     } catch (error) {
       console.error('獲取歷史棋譜建議失敗:', error);
       return {
         suggestions: [],
-        reasoning: ['獲取歷史建議時發生錯誤']
+        reasoning: ['獲取歷史建議時發生錯誤'],
       };
     }
   }
@@ -162,17 +168,19 @@ export class VectorizeService {
 
       // 使用聚類分析找出常見模式
       const clusters = this.performSimpleClustering(vectors, gameStates);
-      
+
       for (const cluster of clusters) {
         if (cluster.games.length >= 3) {
           patterns.push(`發現 ${cluster.games.length} 個相似局面的模式`);
-          
+
           // 分析獲勝策略
-          const winners = cluster.games.filter(g => g.winner !== null && g.winner !== 'draw');
+          const winners = cluster.games.filter(
+            g => g.winner !== null && g.winner !== 'draw'
+          );
           if (winners.length > 0) {
             const blackWins = winners.filter(g => g.winner === 'black').length;
             const whiteWins = winners.filter(g => g.winner === 'white').length;
-            
+
             if (blackWins > whiteWins) {
               strategies.push('在此類局面中，黑棋勝率較高');
             } else if (whiteWins > blackWins) {
@@ -187,14 +195,17 @@ export class VectorizeService {
       insights.push(`發現 ${patterns.length} 個常見模式`);
       insights.push(`識別出 ${strategies.length} 個獲勝策略`);
 
-      return { commonPatterns: patterns, winningStrategies: strategies, insights };
-
+      return {
+        commonPatterns: patterns,
+        winningStrategies: strategies,
+        insights,
+      };
     } catch (error) {
       console.error('分析棋譜模式失敗:', error);
       return {
         commonPatterns: [],
         winningStrategies: [],
-        insights: ['分析過程中發生錯誤']
+        insights: ['分析過程中發生錯誤'],
       };
     }
   }
@@ -202,16 +213,17 @@ export class VectorizeService {
   /**
    * 清理舊的向量數據
    */
-  async cleanupOldVectors(maxAge: number = 30 * 24 * 60 * 60 * 1000): Promise<void> {
+  async cleanupOldVectors(
+    maxAge: number = 30 * 24 * 60 * 60 * 1000
+  ): Promise<void> {
     try {
       const cutoffTime = Date.now() - maxAge;
-      
+
       // 查詢所有向量（這裡需要實現分頁查詢）
       // Vectorize 目前可能不支援直接的時間範圍查詢，
       // 這個功能可能需要配合 D1 資料庫來實現
-      
+
       console.log(`清理 ${cutoffTime} 之前的向量數據`);
-      
     } catch (error) {
       console.error('清理舊向量數據失敗:', error);
     }
@@ -224,10 +236,10 @@ export class VectorizeService {
     const boardString = GameLogic.boardToString(gameState.board);
     const moveCount = gameState.moves.length;
     const currentPlayer = gameState.currentPlayer;
-    
+
     // 分析棋盤特徵
     const features = this.analyzeBoardFeatures(gameState.board);
-    
+
     const description = `五子棋局面分析：
 棋盤狀態：
 ${boardString}
@@ -244,9 +256,10 @@ ${boardString}
 - 活躍區域：${features.activeRegion}
 - 中心控制：${features.centerControl}
 
-最近走法：${gameState.moves.slice(-3).map(move => 
-  `${move.player}(${move.position.row},${move.position.col})`
-).join(' -> ')}`;
+最近走法：${gameState.moves
+      .slice(-3)
+      .map(move => `${move.player}(${move.position.row},${move.position.col})`)
+      .join(' -> ')}`;
 
     return description;
   }
@@ -280,7 +293,12 @@ ${boardString}
     }
 
     // 找出最長連子
-    const directions = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    const directions = [
+      [0, 1],
+      [1, 0],
+      [1, 1],
+      [1, -1],
+    ];
     for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
       for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
         const player = board[row][col];
@@ -289,9 +307,13 @@ ${boardString}
             let count = 1;
             let r = row + dx;
             let c = col + dy;
-            while (r >= 0 && r < GameLogic.BOARD_SIZE && 
-                   c >= 0 && c < GameLogic.BOARD_SIZE && 
-                   board[r][c] === player) {
+            while (
+              r >= 0 &&
+              r < GameLogic.BOARD_SIZE &&
+              c >= 0 &&
+              c < GameLogic.BOARD_SIZE &&
+              board[r][c] === player
+            ) {
               count++;
               r += dx;
               c += dy;
@@ -303,8 +325,10 @@ ${boardString}
     }
 
     // 確定活躍區域
-    let minRow = GameLogic.BOARD_SIZE, maxRow = -1;
-    let minCol = GameLogic.BOARD_SIZE, maxCol = -1;
+    let minRow = GameLogic.BOARD_SIZE,
+      maxRow = -1;
+    let minCol = GameLogic.BOARD_SIZE,
+      maxCol = -1;
     for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
       for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
         if (board[row][col]) {
@@ -316,16 +340,15 @@ ${boardString}
       }
     }
 
-    const activeRegion = minRow <= maxRow ? 
-      `(${minRow},${minCol})-(${maxRow},${maxCol})` : 
-      'none';
+    const activeRegion =
+      minRow <= maxRow ? `(${minRow},${minCol})-(${maxRow},${maxCol})` : 'none';
 
     return {
       blackCount,
       whiteCount,
       longestSequence,
       activeRegion,
-      centerControl
+      centerControl,
     };
   }
 
@@ -335,9 +358,9 @@ ${boardString}
   private async generateEmbedding(text: string): Promise<number[]> {
     try {
       const result = await this.env.AI.run('@cf/baai/bge-base-en-v1.5', {
-        text: [text]
+        text: [text],
       });
-      
+
       return result.data[0];
     } catch (error) {
       console.error('生成文本嵌入失敗:', error);
@@ -349,18 +372,21 @@ ${boardString}
   /**
    * 簡單聚類分析
    */
-  private performSimpleClustering(vectors: number[][], gameStates: GameState[]) {
+  private performSimpleClustering(
+    vectors: number[][],
+    gameStates: GameState[]
+  ) {
     const clusters: { centroid: number[]; games: GameState[] }[] = [];
     const threshold = 0.8;
 
     for (let i = 0; i < vectors.length; i++) {
       const vector = vectors[i];
       const gameState = gameStates[i];
-      
+
       // 找到最相似的聚類
       let bestCluster = -1;
       let bestSimilarity = -1;
-      
+
       for (let j = 0; j < clusters.length; j++) {
         const similarity = this.cosineSimilarity(vector, clusters[j].centroid);
         if (similarity > bestSimilarity && similarity > threshold) {
@@ -368,7 +394,7 @@ ${boardString}
           bestCluster = j;
         }
       }
-      
+
       if (bestCluster >= 0) {
         // 加入現有聚類
         clusters[bestCluster].games.push(gameState);
@@ -378,7 +404,7 @@ ${boardString}
         // 創建新聚類
         clusters.push({
           centroid: [...vector],
-          games: [gameState]
+          games: [gameState],
         });
       }
     }
@@ -393,13 +419,13 @@ ${boardString}
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
-    
+
     for (let i = 0; i < a.length; i++) {
       dotProduct += a[i] * b[i];
       normA += a[i] * a[i];
       normB += b[i] * b[i];
     }
-    
+
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
@@ -419,15 +445,15 @@ ${boardString}
     // 這是一個模擬函數，實際應該從 D1 資料庫查詢完整遊戲記錄
     const moveCount = similar.metadata.moveCount;
     const suggestions: Position[] = [];
-    
+
     // 基於棋盤狀態生成一些可能的走法
     for (let i = 0; i < 3; i++) {
       suggestions.push({
         row: Math.floor(Math.random() * GameLogic.BOARD_SIZE),
-        col: Math.floor(Math.random() * GameLogic.BOARD_SIZE)
+        col: Math.floor(Math.random() * GameLogic.BOARD_SIZE),
       });
     }
-    
+
     return suggestions;
   }
 }
