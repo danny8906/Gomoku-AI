@@ -217,7 +217,6 @@ function getGameHTML(): string {
                     <div id="game-controls">
                         <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
                         <button class="btn primary" onclick="restartGame()">重新開始</button>
-                        <button class="btn secondary" onclick="analyzePosition()">分析局面</button>
                         
                         <!-- AI 難度選擇器 -->
                         <div class="difficulty-selector" id="difficulty-selector" style="display: none;">
@@ -254,11 +253,6 @@ function getGameHTML(): string {
                         <h4>AI 分析</h4>
                         <div id="analysis-content"></div>
                     </div>
-                    
-                    <div class="suggestions" id="suggestions" style="display: none;">
-                        <h4>歷史建議</h4>
-                        <div id="suggestions-content"></div>
-                    </div>
                 </div>
             </div>
         </main>
@@ -281,9 +275,6 @@ function getGameHTML(): string {
                     </button>
                     <button class="btn secondary" id="home-btn">
                         <span>🏠</span> 返回首頁
-                    </button>
-                    <button class="btn secondary" id="analyze-btn">
-                        <span>📊</span> 分析棋局
                     </button>
                 </div>
             </div>
@@ -3018,10 +3009,15 @@ class GomokuGame {
         if (!movesListEl || !this.gameState) return;
         
         movesListEl.innerHTML = '';
-        this.gameState.moves.forEach((move, index) => {
+        
+        // 只顯示過去5步
+        const recentMoves = this.gameState.moves.slice(-5);
+        const startIndex = Math.max(0, this.gameState.moves.length - 5);
+        
+        recentMoves.forEach((move, index) => {
             const moveEl = document.createElement('div');
             moveEl.className = 'move-item';
-            moveEl.textContent = \`\${index + 1}. \${move.player === 'black' ? '黑' : '白'}(\${move.position.row}, \${move.position.col})\`;
+            moveEl.textContent = \`\${startIndex + index + 1}. \${move.player === 'black' ? '黑' : '白'}(\${move.position.row}, \${move.position.col})\`;
             movesListEl.appendChild(moveEl);
         });
         
@@ -3843,7 +3839,6 @@ function analyzeGame() {
     
     // 顯示分析面板
     const analysisEl = document.getElementById('ai-analysis');
-    const suggestionsEl = document.getElementById('suggestions');
     
     if (analysisEl) {
         analysisEl.style.display = 'block';
@@ -3862,10 +3857,6 @@ function analyzeGame() {
                 <p>• 關鍵轉折點在中盤階段</p>
             \`;
         }
-    }
-    
-    if (suggestionsEl) {
-        suggestionsEl.style.display = 'block';
     }
 }
 
@@ -3915,46 +3906,6 @@ function leaveRoom() {
     }
 }
 
-async function analyzePosition() {
-    if (!game.gameState) return;
-    
-    try {
-        const response = await fetch('/api/game/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                gameId: game.gameState.id,
-                player: game.myPlayer
-            })
-        });
-        
-        const data = await response.json();
-        if (data.analysis) {
-            game.showAIAnalysis({ position: { row: 0, col: 0 }, reasoning: '', confidence: 0 }, data.analysis);
-        }
-        
-        if (data.suggestions) {
-            const suggestionsEl = document.getElementById('suggestions');
-            const contentEl = document.getElementById('suggestions-content');
-            
-            if (suggestionsEl && contentEl) {
-                suggestionsEl.style.display = 'block';
-                contentEl.innerHTML = \`
-                    <p><strong>建議走法：</strong></p>
-                    \${data.suggestions.suggestions.map((pos, i) => 
-                        \`<p>\${i + 1}. (\${pos.row}, \${pos.col})</p>\`
-                    ).join('')}
-                    <p><strong>理由：</strong></p>
-                    \${data.suggestions.reasoning.map(reason => 
-                        \`<p>• \${reason}</p>\`
-                    ).join('')}
-                \`;
-            }
-        }
-    } catch (error) {
-        console.error('分析位置失敗:', error);
-    }
-}
 
 async function searchPlayers() {
     const query = document.getElementById('search-input').value;

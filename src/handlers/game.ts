@@ -91,8 +91,8 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(`
       INSERT INTO games (
         id, board_state, current_player, status, mode, 
-        black_player_id, white_player_id, created_at, updated_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        black_player_id, white_player_id, created_at, updated_at, moves
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
     `).bind(
       gameState.id,
       JSON.stringify(gameState.board),
@@ -102,7 +102,8 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
       gameState.players.black || null,
       gameState.players.white || null,
       gameState.createdAt,
-      gameState.updatedAt
+      gameState.updatedAt,
+      JSON.stringify(gameState.moves)
     ).run();
 
     return new Response(JSON.stringify({ gameState }), {
@@ -159,7 +160,7 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
       currentPlayer: gameData.current_player as 'black' | 'white',
       status: gameData.status as 'waiting' | 'playing' | 'finished',
       mode: gameData.mode as 'pvp' | 'ai',
-      moves: [], // 需要從其他地方獲取或重新構建
+      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
         black: gameData.black_player_id as string || undefined,
@@ -176,14 +177,15 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(`
       UPDATE games 
       SET board_state = ?1, current_player = ?2, status = ?3, 
-          winner = ?4, updated_at = ?5
-      WHERE id = ?6
+          winner = ?4, updated_at = ?5, moves = ?6
+      WHERE id = ?7
     `).bind(
       JSON.stringify(newGameState.board),
       newGameState.currentPlayer,
       newGameState.status,
       newGameState.winner,
       newGameState.updatedAt,
+      JSON.stringify(newGameState.moves),
       gameId
     ).run();
 
@@ -245,7 +247,7 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
       currentPlayer: gameData.current_player as 'black' | 'white',
       status: gameData.status as 'waiting' | 'playing' | 'finished',
       mode: gameData.mode as 'pvp' | 'ai',
-      moves: [],
+      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
         black: gameData.black_player_id as string || undefined,
@@ -270,14 +272,15 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare(`
       UPDATE games 
       SET board_state = ?1, current_player = ?2, status = ?3, 
-          winner = ?4, updated_at = ?5
-      WHERE id = ?6
+          winner = ?4, updated_at = ?5, moves = ?6
+      WHERE id = ?7
     `).bind(
       JSON.stringify(newGameState.board),
       newGameState.currentPlayer,
       newGameState.status,
       newGameState.winner,
       newGameState.updatedAt,
+      JSON.stringify(newGameState.moves),
       gameId
     ).run();
 
@@ -351,7 +354,7 @@ async function handleAnalyzeGame(request: Request, env: Env): Promise<Response> 
       currentPlayer: gameData.current_player as 'black' | 'white',
       status: gameData.status as 'waiting' | 'playing' | 'finished',
       mode: gameData.mode as 'pvp' | 'ai',
-      moves: [],
+      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
         black: gameData.black_player_id as string || undefined,
@@ -418,7 +421,7 @@ async function handleGetGameState(gameId: string, env: Env): Promise<Response> {
       currentPlayer: gameData.current_player as 'black' | 'white',
       status: gameData.status as 'waiting' | 'playing' | 'finished',
       mode: gameData.mode as 'pvp' | 'ai',
-      moves: [],
+      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       roomCode: gameData.room_code as string || undefined,
       players: {
@@ -489,7 +492,7 @@ async function handleGetSuggestions(request: Request, env: Env): Promise<Respons
       currentPlayer: gameData.current_player as 'black' | 'white',
       status: gameData.status as 'waiting' | 'playing' | 'finished',
       mode: gameData.mode as 'pvp' | 'ai',
-      moves: [],
+      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
       winner: gameData.winner as 'black' | 'white' | 'draw' | null,
       players: {
         black: gameData.black_player_id as string || undefined,

@@ -40,6 +40,7 @@ CREATE TABLE games (
     room_code TEXT,
     black_player_id TEXT,
     white_player_id TEXT,
+    moves TEXT DEFAULT '[]', -- JSON 格式儲存走法
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (black_player_id) REFERENCES users(id),

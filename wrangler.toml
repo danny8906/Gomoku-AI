@@ -32,6 +32,10 @@ directory = "public"
 tag = "v4"
 new_classes = ["GameRoom"]
 
+[[migrations]]
+tag = "v5"
+sql_file = "migrations/0001_initial.sql"
+
 [env.production]
 name = "gomoku-cf"
 
