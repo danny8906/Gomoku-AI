@@ -364,7 +364,7 @@ export class UserService {
       )
         .bind(
           userId,
-          `匿名玩家_${userId.substring(0, 5)}`,
+          `匿名玩家_${userId.slice(-6)}`,
           Date.now(),
           Date.now()
         )

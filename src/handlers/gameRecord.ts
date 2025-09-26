@@ -121,7 +121,7 @@ async function ensureUserExists(userId: string, env: Env): Promise<void> {
     )
       .bind(
         userId,
-        `匿名玩家_${userId.substring(0, 5)}`,
+        `匿名玩家_${userId.slice(-6)}`,
         Date.now(),
         Date.now()
       )

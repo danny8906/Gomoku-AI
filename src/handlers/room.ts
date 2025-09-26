@@ -8,7 +8,7 @@ import { corsHeaders } from '../utils/cors';
 export async function handleRoomAPI(
   request: Request,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/room', '');
@@ -146,7 +146,7 @@ async function handleCreateRoom(request: Request, env: Env): Promise<Response> {
         'waiting',
         mode,
         result.roomCode,
-        mode === 'pvp' ? null : userId, // PVP 模式暫時不設置玩家
+        mode === 'pvp' ? userId : userId, // 修正：PVP 模式也設置創建房間的玩家為黑棋
         null,
         Date.now(),
         Date.now()
@@ -256,7 +256,7 @@ async function handleJoinRoom(request: Request, env: Env): Promise<Response> {
 
     return new Response(
       JSON.stringify({
-        ...result,
+        ...(result as Record<string, any>),
         websocketUrl: `/api/room/${roomCode}/websocket`,
       }),
       {
@@ -330,7 +330,7 @@ async function handleGetRoom(roomCode: string, env: Env): Promise<Response> {
 
     return new Response(
       JSON.stringify({
-        ...result,
+        ...(result as Record<string, any>),
         websocketUrl: `/api/room/${roomCode}/websocket`,
       }),
       {

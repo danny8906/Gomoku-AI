@@ -340,6 +340,9 @@ export class GameRoom {
       !!this.gameState
     );
 
+    // 確保用戶存在
+    await this.ensureUserExists(session.userId);
+
     if (!this.gameState) {
       console.log('handlePlayerJoin: 遊戲狀態不存在');
       this.sendToClient(webSocket, {
@@ -569,6 +572,9 @@ export class GameRoom {
 
     console.log(`嘗試加入房間: ${targetRoomCode}, 用戶: ${userId}`);
     console.log(`URL 路徑: ${url.pathname}, 路徑部分:`, pathParts);
+
+    // 確保用戶存在
+    await this.ensureUserExists(userId);
 
     await this.loadRoomState();
 
@@ -886,7 +892,7 @@ export class GameRoom {
           )
             .bind(
               player.id,
-              `匿名玩家_${player.id.substring(0, 5)}`, // 生成用戶名
+              `匿名玩家_${player.id.slice(-6)}`, // 生成用戶名
               Date.now(),
               Date.now()
             )
@@ -946,7 +952,7 @@ export class GameRoom {
             )
               .bind(
                 opponentId,
-                `匿名玩家_${opponentId.substring(0, 5)}`,
+                `匿名玩家_${opponentId.slice(-6)}`,
                 Date.now(),
                 Date.now()
               )
@@ -1022,6 +1028,37 @@ export class GameRoom {
    */
   private updateActivity(): void {
     this.lastActivityTime = Date.now();
+  }
+
+  /**
+   * 確保用戶存在，如果不存在則創建
+   */
+  private async ensureUserExists(userId: string): Promise<void> {
+    const userExists = await this.env.DB.prepare(
+      `
+      SELECT id FROM users WHERE id = ?1
+    `
+    )
+      .bind(userId)
+      .first();
+
+    if (!userExists) {
+      console.log(`用戶 ${userId} 不存在，正在創建...`);
+      await this.env.DB.prepare(
+        `
+        INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
+        VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
+      `
+      )
+        .bind(
+          userId,
+          `匿名玩家_${userId.slice(-6)}`,
+          Date.now(),
+          Date.now()
+        )
+        .run();
+      console.log(`已創建用戶: ${userId}`);
+    }
   }
 
   /**
