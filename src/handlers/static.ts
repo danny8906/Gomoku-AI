@@ -366,11 +366,19 @@ function getRoomHTML(t: Translations, language: string): string {
                                     <div class="player-piece"></div>
                                     <span>${language === 'zh-TW' ? '黑棋' : 'Black'}</span>
                                     <span id="black-player">${language === 'zh-TW' ? '等待中...' : 'Waiting...'}</span>
+                                    <div class="connection-status" id="black-connection-status" style="display: none;">
+                                        <span class="status-dot offline"></span>
+                                        <span class="status-text">${language === 'zh-TW' ? '離線' : 'Offline'}</span>
+                                    </div>
                                 </div>
                                 <div class="player white">
                                     <div class="player-piece"></div>
                                     <span>${language === 'zh-TW' ? '白棋' : 'White'}</span>
                                     <span id="white-player">${language === 'zh-TW' ? '等待中...' : 'Waiting...'}</span>
+                                    <div class="connection-status" id="white-connection-status" style="display: none;">
+                                        <span class="status-dot offline"></span>
+                                        <span class="status-text">${language === 'zh-TW' ? '離線' : 'Offline'}</span>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -407,13 +415,10 @@ function getRoomHTML(t: Translations, language: string): string {
                 </div>
                 <div class="game-over-buttons">
                     <button class="btn primary" id="restart-btn">
-                        <span>🔄</span> 重新開始
+                        <span>🔄</span> ${language === 'zh-TW' ? '重新開始' : 'Restart'}
                     </button>
                     <button class="btn secondary" id="home-btn">
                         <span>🏠</span> ${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}
-                    </button>
-                    <button class="btn secondary" id="leave-btn">
-                        <span>🚪</span> ${language === 'zh-TW' ? '離開房間' : 'Leave Room'}
                     </button>
                 </div>
             </div>
@@ -1583,10 +1588,21 @@ body.modal-open {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.chat-message.system-message {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    font-style: italic;
+}
+
 .chat-user {
     font-weight: 600;
     color: #4299e1;
     margin-right: 0.5rem;
+}
+
+.chat-text.system-text {
+    color: #92400e;
+    font-weight: 500;
 }
 
 .chat-text {
@@ -1903,6 +1919,103 @@ body.modal-open {
 @keyframes rotate {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+
+/* 斷線倒計時樣式 */
+.disconnect-countdown {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 193, 7, 0.95);
+    color: #856404;
+    padding: 2rem;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    z-index: 10000;
+    text-align: center;
+    border: 3px solid #ffc107;
+    animation: pulse 1s infinite;
+}
+
+.countdown-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.countdown-timer {
+    font-size: 3rem;
+    font-weight: bold;
+    color: #dc3545;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    animation: bounce 1s infinite;
+}
+
+.countdown-text {
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+@keyframes pulse {
+    0% { transform: translate(-50%, -50%) scale(1); }
+    50% { transform: translate(-50%, -50%) scale(1.05); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-10px); }
+    60% { transform: translateY(-5px); }
+}
+
+/* 連接狀態指示器樣式 */
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse-dot 2s infinite;
+}
+
+.status-dot.online {
+    background-color: #28a745;
+}
+
+.status-dot.offline {
+    background-color: #dc3545;
+}
+
+.status-dot.reconnecting {
+    background-color: #ffc107;
+}
+
+.status-text {
+    font-weight: 500;
+}
+
+@keyframes pulse-dot {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
 }
 
 /* 遊戲結束彈窗樣式 */
@@ -2663,21 +2776,63 @@ function updateUIText() {
 
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
-    toast.className = \`toast toast-\${type}\`;
     toast.textContent = message;
+    
+    // 根據類型設置不同的樣式
+    let backgroundColor, borderColor, shadowColor;
+    switch (type) {
+        case 'error':
+            backgroundColor = '#fee2e2';
+            borderColor = '#dc2626';
+            shadowColor = 'rgba(220, 38, 38, 0.3)';
+            break;
+        case 'warning':
+            backgroundColor = '#fef3c7';
+            borderColor = '#f59e0b';
+            shadowColor = 'rgba(245, 158, 11, 0.3)';
+            break;
+        case 'success':
+            backgroundColor = '#d1fae5';
+            borderColor = '#10b981';
+            shadowColor = 'rgba(16, 185, 129, 0.3)';
+            break;
+        default:
+            backgroundColor = '#dbeafe';
+            borderColor = '#3b82f6';
+            shadowColor = 'rgba(59, 130, 246, 0.3)';
+    }
+    
+    toast.style.cssText = \`
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: \${backgroundColor};
+        color: \${type === 'error' ? '#dc2626' : (type === 'warning' ? '#92400e' : (type === 'success' ? '#065f46' : '#1e40af'))};
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        border-left: 4px solid \${borderColor};
+        box-shadow: 0 8px 25px \${shadowColor};
+        z-index: 1000;
+        font-weight: 600;
+        font-size: 1rem;
+        max-width: 400px;
+        animation: slideInRight 0.3s ease;
+        transform: translateX(0);
+    \`;
     
     document.body.appendChild(toast);
     
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 100);
+    // 延長顯示時間，特別是error類型
+    const displayTime = type === 'error' ? 5000 : 3000;
     
     setTimeout(() => {
-        toast.classList.remove('show');
+        toast.style.animation = 'slideOutRight 0.3s ease';
         setTimeout(() => {
-            document.body.removeChild(toast);
+            if (toast.parentNode) {
+                document.body.removeChild(toast);
+            }
         }, 300);
-    }, 3000);
+    }, displayTime);
 }
 
 class GomokuGame {
@@ -2894,6 +3049,10 @@ class GomokuGame {
             this.websocket.onopen = () => {
                 console.log('WebSocket 連接成功');
                 
+                // 初始化連接狀態為線上
+                const currentUserId = this.getCurrentUserId();
+                this.updatePlayerConnectionStatus(currentUserId, 'online');
+                
                 // 發送加入房間訊息
                 this.websocket.send(JSON.stringify({
                     type: 'join',
@@ -2909,6 +3068,10 @@ class GomokuGame {
             
             this.websocket.onclose = () => {
                 console.log('WebSocket 連接關閉');
+                
+                // 更新連接狀態為離線
+                const currentUserId = this.getCurrentUserId();
+                this.updatePlayerConnectionStatus(currentUserId, 'offline');
             };
             
             this.websocket.onerror = (error) => {
@@ -2990,6 +3153,18 @@ class GomokuGame {
                 
             case 'chat':
                 this.displayChatMessage(message.data);
+                break;
+                
+            case 'playerDisconnected':
+                this.handlePlayerDisconnected(message.data);
+                break;
+                
+            case 'playerReconnected':
+                this.handlePlayerReconnected(message.data);
+                break;
+                
+            case 'gameEnd':
+                this.handleGameEnd(message.data);
                 break;
                 
             case 'error':
@@ -3092,19 +3267,206 @@ class GomokuGame {
         const chatMessages = document.getElementById('chat-messages');
         if (chatMessages) {
             const messageEl = document.createElement('div');
-            messageEl.className = 'chat-message';
             
-            // 統一格式化用戶ID顯示
-            const displayUserId = chatData.userId.startsWith('Anonymous_') ? 
-                chatData.userId : 
-                \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${chatData.userId.slice(-6)}\`;
+            // 系統消息使用特殊樣式
+            if (chatData.isSystem || chatData.userId === 'system') {
+                messageEl.className = 'chat-message system-message';
+                messageEl.innerHTML = \`
+                    <span class="chat-text system-text">\${chatData.message}</span>
+                \`;
+            } else {
+                messageEl.className = 'chat-message';
+                // 統一格式化用戶ID顯示
+                const displayUserId = chatData.userId.startsWith('Anonymous_') ? 
+                    chatData.userId : 
+                    \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${chatData.userId.slice(-6)}\`;
+                
+                messageEl.innerHTML = \`
+                    <span class="chat-user">\${displayUserId}:</span>
+                    <span class="chat-text">\${chatData.message}</span>
+                \`;
+            }
             
-            messageEl.innerHTML = \`
-                <span class="chat-user">\${displayUserId}:</span>
-                <span class="chat-text">\${chatData.message}</span>
-            \`;
             chatMessages.appendChild(messageEl);
             chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+    
+    handlePlayerDisconnected(data) {
+        const currentUserId = this.getCurrentUserId();
+        
+        // 更新連接狀態顯示
+        this.updatePlayerConnectionStatus(data.userId, 'offline');
+        
+        if (data.userId === currentUserId) {
+            // 如果是自己斷線，顯示重連提示
+            showToast(currentLanguage === 'zh-TW' ? 
+                '⚠️ 您已斷線，請重新連接' : 
+                '⚠️ You have disconnected, please reconnect', 'error');
+        } else {
+            // 如果是對手斷線，顯示倒計時
+            const displayUserId = data.userId.startsWith('Anonymous_') ? 
+                data.userId : 
+                \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${data.userId.slice(-6)}\`;
+            
+            // 顯示更明顯的提示
+            showToast(
+                currentLanguage === 'zh-TW' ? 
+                    \`🔴 \${displayUserId} 已離開，30秒後您將獲勝\` : 
+                    \`🔴 \${displayUserId} has left, you will win in 30 seconds\`, 
+                'error'
+            );
+            
+            // 在聊天室中記錄玩家離開事件
+            this.displayChatMessage({
+                userId: 'system',
+                message: currentLanguage === 'zh-TW' ? 
+                    \`⚠️ \${displayUserId} 已離開房間，30秒後遊戲將結束\` : 
+                    \`⚠️ \${displayUserId} has left the room, game will end in 30 seconds\`,
+                isSystem: true
+            });
+            
+            // 顯示倒計時
+            this.startDisconnectCountdown(data.timeout);
+        }
+    }
+    
+    handlePlayerReconnected(data) {
+        const currentUserId = this.getCurrentUserId();
+        
+        // 更新連接狀態顯示
+        this.updatePlayerConnectionStatus(data.userId, 'online');
+        
+        if (data.userId !== currentUserId) {
+            const displayUserId = data.userId.startsWith('Anonymous_') ? 
+                data.userId : 
+                \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${data.userId.slice(-6)}\`;
+            
+            // 顯示更明顯的重連提示
+            showToast(
+                currentLanguage === 'zh-TW' ? 
+                    \`✅ \${displayUserId} 已重新連接\` : 
+                    \`✅ \${displayUserId} has reconnected\`, 
+                'success'
+            );
+            
+            // 在聊天室中記錄玩家重連事件
+            this.displayChatMessage({
+                userId: 'system',
+                message: currentLanguage === 'zh-TW' ? 
+                    \`✅ \${displayUserId} 已重新連接房間\` : 
+                    \`✅ \${displayUserId} has reconnected to the room\`,
+                isSystem: true
+            });
+            
+            // 停止倒計時
+            this.stopDisconnectCountdown();
+        }
+    }
+    
+    handleGameEnd(data) {
+        if (data.reason === 'opponentTimeout') {
+            this.gameState = data.gameState;
+            this.updateGameDisplay();
+            this.drawBoard();
+            
+            // 顯示獲勝彈窗
+            setTimeout(() => {
+                this.showGameOverModal();
+            }, 1000);
+            
+            showToast(
+                currentLanguage === 'zh-TW' ? 
+                    '對手超時，您獲勝了！' : 
+                    'Opponent timed out, you win!', 
+                'success'
+            );
+        }
+    }
+    
+    startDisconnectCountdown(timeout) {
+        // 創建倒計時顯示
+        const countdownEl = document.createElement('div');
+        countdownEl.id = 'disconnect-countdown';
+        countdownEl.className = 'disconnect-countdown';
+        countdownEl.innerHTML = \`
+            <div class="countdown-content">
+                <div class="countdown-timer" id="countdown-timer">30</div>
+                <div class="countdown-text">\${currentLanguage === 'zh-TW' ? '秒後獲勝' : 'seconds until victory'}</div>
+            </div>
+        \`;
+        
+        document.body.appendChild(countdownEl);
+        
+        // 開始倒計時
+        let timeLeft = 30;
+        const timer = setInterval(() => {
+            timeLeft--;
+            const timerEl = document.getElementById('countdown-timer');
+            if (timerEl) {
+                timerEl.textContent = timeLeft.toString();
+            }
+            
+            if (timeLeft <= 0) {
+                clearInterval(timer);
+                this.stopDisconnectCountdown();
+            }
+        }, 1000);
+        
+        // 保存計時器引用
+        this.disconnectCountdownTimer = timer;
+    }
+    
+    stopDisconnectCountdown() {
+        if (this.disconnectCountdownTimer) {
+            clearInterval(this.disconnectCountdownTimer);
+            this.disconnectCountdownTimer = null;
+        }
+        
+        const countdownEl = document.getElementById('disconnect-countdown');
+        if (countdownEl) {
+            countdownEl.remove();
+        }
+    }
+    
+    updatePlayerConnectionStatus(userId, status) {
+        if (!this.gameState) return;
+        
+        // 確定是黑棋還是白棋玩家
+        let playerType = null;
+        if (this.gameState.players.black === userId) {
+            playerType = 'black';
+        } else if (this.gameState.players.white === userId) {
+            playerType = 'white';
+        }
+        
+        if (playerType) {
+            const statusEl = document.getElementById(\`\${playerType}-connection-status\`);
+            if (statusEl) {
+                const dotEl = statusEl.querySelector('.status-dot');
+                const textEl = statusEl.querySelector('.status-text');
+                
+                if (dotEl && textEl) {
+                    // 移除所有狀態類別
+                    dotEl.classList.remove('online', 'offline', 'reconnecting');
+                    statusEl.style.display = 'flex';
+                    
+                    switch (status) {
+                        case 'online':
+                            dotEl.classList.add('online');
+                            textEl.textContent = currentLanguage === 'zh-TW' ? '線上' : 'Online';
+                            break;
+                        case 'offline':
+                            dotEl.classList.add('offline');
+                            textEl.textContent = currentLanguage === 'zh-TW' ? '離線' : 'Offline';
+                            break;
+                        case 'reconnecting':
+                            dotEl.classList.add('reconnecting');
+                            textEl.textContent = currentLanguage === 'zh-TW' ? '重新連接中' : 'Reconnecting';
+                            break;
+                    }
+                }
+            }
         }
     }
     
@@ -3750,13 +4112,11 @@ class GomokuGame {
         // 直接綁定按鈕事件
         const restartBtn = document.getElementById('restart-btn');
         const homeBtn = document.getElementById('home-btn');
-        const leaveBtn = document.getElementById('leave-btn');
         const analyzeBtn = document.getElementById('analyze-btn');
         
         console.log('檢查按鈕元素:', {
             restartBtn: !!restartBtn,
             homeBtn: !!homeBtn,
-            leaveBtn: !!leaveBtn,
             analyzeBtn: !!analyzeBtn
         });
         
@@ -3771,13 +4131,6 @@ class GomokuGame {
             homeBtn.onclick = function() {
                 console.log('返回首頁按鈕被點擊');
                 returnToHome();
-            };
-        }
-        
-        if (leaveBtn) {
-            leaveBtn.onclick = function() {
-                console.log('Leave room button clicked');
-                leaveRoom();
             };
         }
         

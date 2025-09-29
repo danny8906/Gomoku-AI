@@ -108,7 +108,7 @@ export interface GameVector {
 
 // WebSocket 訊息類型
 export interface WebSocketMessage {
-  type: 'move' | 'join' | 'leave' | 'chat' | 'gameState' | 'error';
+  type: 'move' | 'join' | 'leave' | 'chat' | 'gameState' | 'error' | 'playerDisconnected' | 'playerReconnected' | 'gameEnd';
   data: any;
   timestamp: number;
 }
