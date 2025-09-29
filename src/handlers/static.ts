@@ -327,7 +327,18 @@ function getRoomHTML(): string {
             <div class="room-container">
                 <div class="waiting-area" id="waiting-area">
                     <h2>等待玩家加入...</h2>
-                    <p>分享房間代碼給朋友：<strong id="share-code">----</strong></p>
+                    <div class="share-section">
+                        <p>分享房間代碼給朋友：<strong id="share-code">----</strong></p>
+                        <div class="url-section">
+                            <label for="room-url">房間網址：</label>
+                            <div class="url-input-group">
+                                <input type="text" id="room-url" readonly value="----" class="url-input">
+                                <button class="btn copy-btn" onclick="copyRoomUrl()" id="copy-url-btn">
+                                    <span id="copy-icon">📋</span> 複製網址
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="loading">⏳</div>
                     <div class="waiting-controls">
                         <button class="btn secondary" onclick="goHome()">
@@ -2466,6 +2477,137 @@ body.modal-open {
 
 .leaderboard-table tr:hover {
     background: #f7fafc;
+}
+
+/* 房間等待區域樣式 */
+.waiting-area {
+    text-align: center;
+    padding: 2rem;
+}
+
+.waiting-area h2 {
+    color: #4a5568;
+    margin-bottom: 1rem;
+}
+
+.share-section {
+    margin-bottom: 2rem;
+}
+
+.share-section p {
+    color: #718096;
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+}
+
+.share-section strong {
+    color: #2d3748;
+    font-size: 1.2rem;
+    background: #f7fafc;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    border: 2px solid #e2e8f0;
+    display: inline-block;
+    margin: 0 0.5rem;
+}
+
+.url-section {
+    margin-top: 1.5rem;
+}
+
+.url-section label {
+    display: block;
+    color: #4a5568;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+}
+
+.url-input-group {
+    display: flex;
+    gap: 0.5rem;
+    max-width: 500px;
+    margin: 0 auto;
+    align-items: center;
+}
+
+.url-input {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    background: #f7fafc;
+    color: #4a5568;
+    font-family: 'Courier New', monospace;
+}
+
+.url-input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.copy-btn {
+    padding: 0.75rem 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.copy-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.copy-btn:active {
+    transform: translateY(0);
+}
+
+.copy-btn.copied {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+}
+
+.copy-btn.copied #copy-icon::before {
+    content: '✓';
+}
+
+.waiting-controls {
+    margin-top: 2rem;
+}
+
+.loading {
+    font-size: 2rem;
+    margin: 1rem 0;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* 響應式房間樣式 */
+@media (max-width: 768px) {
+    .url-input-group {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .copy-btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
 }`;
 }
 
@@ -2588,6 +2730,7 @@ class GomokuGame {
                 // 更新頁面顯示房間代碼
                 const roomCodeEl = document.getElementById('room-code');
                 const shareCodeEl = document.getElementById('share-code');
+                const roomUrlEl = document.getElementById('room-url');
                 
                 if (roomCodeEl) {
                     roomCodeEl.textContent = \`房間代碼: \${data.roomCode}\`;
@@ -2595,6 +2738,12 @@ class GomokuGame {
                 
                 if (shareCodeEl) {
                     shareCodeEl.textContent = data.roomCode;
+                }
+                
+                // 設置房間URL
+                if (roomUrlEl) {
+                    const roomUrl = \`\${window.location.origin}/room?code=\${data.roomCode}\`;
+                    roomUrlEl.value = roomUrl;
                 }
                 
                 // 連接 WebSocket 並自動加入房間
@@ -2634,6 +2783,7 @@ class GomokuGame {
                 // 更新頁面顯示房間代碼
                 const roomCodeEl = document.getElementById('room-code');
                 const shareCodeEl = document.getElementById('share-code');
+                const roomUrlEl = document.getElementById('room-url');
                 
                 if (roomCodeEl) {
                     roomCodeEl.textContent = \`房間代碼: \${roomCode}\`;
@@ -2641,6 +2791,12 @@ class GomokuGame {
                 
                 if (shareCodeEl) {
                     shareCodeEl.textContent = roomCode;
+                }
+                
+                // 設置房間URL
+                if (roomUrlEl) {
+                    const roomUrl = \`\${window.location.origin}/room?code=\${roomCode}\`;
+                    roomUrlEl.value = roomUrl;
                 }
                 
                 // 連接 WebSocket
@@ -4044,6 +4200,64 @@ function joinRoom() {
     const roomCode = document.getElementById('roomCode').value.toUpperCase();
     if (roomCode.length === 4) {
         window.location.href = \`/room?code=\${roomCode}\`;
+    }
+}
+
+function copyRoomUrl() {
+    const roomUrlInput = document.getElementById('room-url');
+    const copyBtn = document.getElementById('copy-url-btn');
+    const copyIcon = document.getElementById('copy-icon');
+    
+    if (roomUrlInput && copyBtn && copyIcon) {
+        // 選擇輸入框中的文本
+        roomUrlInput.select();
+        roomUrlInput.setSelectionRange(0, 99999); // 對於移動設備
+        
+        try {
+            // 嘗試複製到剪貼板
+            document.execCommand('copy');
+            
+            // 更新按鈕狀態
+            copyBtn.classList.add('copied');
+            copyIcon.textContent = '✓';
+            copyBtn.innerHTML = '<span id="copy-icon">✓</span> 已複製';
+            
+            // 2秒後恢復原始狀態
+            setTimeout(() => {
+                copyBtn.classList.remove('copied');
+                copyIcon.textContent = '📋';
+                copyBtn.innerHTML = '<span id="copy-icon">📋</span> 複製網址';
+            }, 2000);
+            
+            // 顯示成功提示
+            showToast('房間網址已複製到剪貼板！', 'success');
+            
+        } catch (err) {
+            console.error('複製失敗:', err);
+            
+            // 如果 execCommand 失敗，嘗試使用 Clipboard API
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(roomUrlInput.value).then(() => {
+                    // 更新按鈕狀態
+                    copyBtn.classList.add('copied');
+                    copyIcon.textContent = '✓';
+                    copyBtn.innerHTML = '<span id="copy-icon">✓</span> 已複製';
+                    
+                    setTimeout(() => {
+                        copyBtn.classList.remove('copied');
+                        copyIcon.textContent = '📋';
+                        copyBtn.innerHTML = '<span id="copy-icon">📋</span> 複製網址';
+                    }, 2000);
+                    
+                    showToast('房間網址已複製到剪貼板！', 'success');
+                }).catch((clipboardErr) => {
+                    console.error('Clipboard API 複製失敗:', clipboardErr);
+                    showToast('複製失敗，請手動複製網址', 'error');
+                });
+            } else {
+                showToast('複製失敗，請手動複製網址', 'error');
+            }
+        }
     }
 }
 
