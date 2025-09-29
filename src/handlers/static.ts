@@ -3066,12 +3066,24 @@ class GomokuGame {
                 this.handleWebSocketMessage(message);
             };
             
-            this.websocket.onclose = () => {
-                console.log('WebSocket 連接關閉');
+            this.websocket.onclose = (event) => {
+                console.log('WebSocket 連接關閉 - 代碼: ' + event.code + ', 原因: ' + event.reason);
                 
                 // 更新連接狀態為離線
                 const currentUserId = this.getCurrentUserId();
                 this.updatePlayerConnectionStatus(currentUserId, 'offline');
+                
+                // 如果是正常關閉（用戶主動離開），不需要顯示錯誤訊息
+                if (event.code === 1000) {
+                    console.log('WebSocket 正常關閉（用戶主動離開房間）');
+                } else {
+                    console.log('WebSocket 異常關閉');
+                    // 可以考慮顯示重連提示
+                    showToast(
+                        currentLanguage === 'zh-TW' ? '連接已斷開' : 'Connection lost', 
+                        'warning'
+                    );
+                }
             };
             
             this.websocket.onerror = (error) => {
@@ -4939,18 +4951,44 @@ function leaveRoom() {
     if (confirm(currentLanguage === 'zh-TW' ? '確定要離開房間嗎？' : 'Are you sure you want to leave the room?')) {
         if (game && game.websocket) {
             try {
+                console.log('發送離開房間訊息並關閉WebSocket');
+                
+                // 發送離開訊息
                 game.websocket.send(JSON.stringify({
                     type: 'leave',
                     data: {},
                     timestamp: Date.now()
                 }));
-                game.websocket.close();
+                
+                // 立即關閉WebSocket連接
+                game.websocket.close(1000, 'User left room');
+                
+                // 清除WebSocket引用
+                game.websocket = null;
+                
+                console.log('WebSocket已關閉，離開房間');
             } catch (error) {
                 console.log('Failed to send leave message:', error);
+                // 即使發送失敗，也要關閉WebSocket
+                if (game.websocket) {
+                    game.websocket.close();
+                    game.websocket = null;
+                }
             }
         }
+        
+        // 顯示離開提示
+        showToast(
+            currentLanguage === 'zh-TW' ? '已離開房間' : 'Left room', 
+            'info'
+        );
+        
         console.log('Leaving room, returning to home page');
-        window.location.href = '/';
+        
+        // 短暫延遲後返回首頁，確保WebSocket關閉完成
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 500);
     }
 }
 

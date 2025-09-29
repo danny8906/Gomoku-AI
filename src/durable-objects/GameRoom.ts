@@ -141,6 +141,19 @@ export class GameRoom {
       }, webSocket);
     }
 
+    // 如果這是重新連線且遊戲狀態存在，嘗試將玩家重新分配到遊戲中
+    if (this.gameState && this.gameState.mode === 'pvp') {
+      const playerSlot = this.findPlayerSlot(userId);
+      if (playerSlot) {
+        console.log(`重新連線玩家 ${userId} 已分配到 ${playerSlot} 位置`);
+        // 更新會話中的玩家信息
+        this.sessions.set(webSocket, { userId, player: playerSlot });
+      } else if (this.gameState.status === 'waiting') {
+        // 如果遊戲還在等待中，嘗試自動分配玩家
+        await this.handlePlayerJoin(webSocket, {});
+      }
+    }
+
     // 發送當前遊戲狀態
     if (this.gameState) {
       this.sendToClient(webSocket, {
@@ -172,22 +185,32 @@ export class GameRoom {
     });
 
     // 處理連接關閉
-    webSocket.addEventListener('close', async () => {
+    webSocket.addEventListener('close', async (event) => {
+      console.log(`WebSocket 連接關閉，代碼: ${event.code}, 原因: ${event.reason}`);
+      
       const session = this.sessions.get(webSocket);
       if (session) {
+        console.log(`玩家 ${session.userId} 的 WebSocket 連接關閉`);
+        
         // 如果是PVP模式且遊戲進行中，啟動玩家離開檢測
         if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing') {
+          console.log(`觸發玩家離開檢測: ${session.userId}`);
           await this.handlePlayerDisconnect(session.userId);
         }
         
         this.sessions.delete(webSocket);
+      } else {
+        console.log('關閉的 WebSocket 沒有對應的會話');
       }
       
       this.updateActivity(); // 更新活動時間
 
       // 如果沒有玩家了，更新房間狀態
       if (this.sessions.size === 0) {
+        console.log('房間內沒有玩家，準備清理');
         this.handleRoomEmpty();
+      } else {
+        console.log(`房間內還有 ${this.sessions.size} 個玩家`);
       }
     });
 
@@ -1462,5 +1485,21 @@ export class GameRoom {
     } catch (error) {
       console.error('記錄遊戲結果和計算評分時發生錯誤:', error);
     }
+  }
+
+  /**
+   * 查找玩家在遊戲中的位置
+   */
+  private findPlayerSlot(userId: string): 'black' | 'white' | null {
+    if (!this.gameState) return null;
+    
+    if (this.gameState.players.black === userId) {
+      return 'black';
+    }
+    if (this.gameState.players.white === userId) {
+      return 'white';
+    }
+    
+    return null;
   }
 }
