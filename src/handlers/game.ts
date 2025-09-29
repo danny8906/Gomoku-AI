@@ -81,7 +81,7 @@ async function handleCreateGame(request: Request, env: Env, t: any): Promise<Res
         )
           .bind(
             userId,
-            `匿名玩家_${userId.slice(-6)}`,
+            `Anonymous_${userId.slice(-6)}`,
             0,
             0,
             0,

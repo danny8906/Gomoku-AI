@@ -355,8 +355,8 @@ function getRoomHTML(t: Translations, language: string): string {
                         <div class="game-board-container">
                             <canvas id="game-board" width="600" height="600"></canvas>
                             <div id="game-controls">
-                                <button class="btn secondary" onclick="leaveRoom()">離開房間</button>
-                                <button class="btn primary" onclick="restartGame()" style="display: none;">重新開始</button>
+                                <button class="btn secondary" onclick="leaveRoom()">${language === 'zh-TW' ? '離開房間' : 'Leave Room'}</button>
+                                <button class="btn primary" onclick="restartGame()" style="display: none;">${t.restart}</button>
                             </div>
                         </div>
                         
@@ -413,7 +413,7 @@ function getRoomHTML(t: Translations, language: string): string {
                         <span>🏠</span> ${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}
                     </button>
                     <button class="btn secondary" id="leave-btn">
-                        <span>🚪</span> 離開房間
+                        <span>🚪</span> ${language === 'zh-TW' ? '離開房間' : 'Leave Room'}
                     </button>
                 </div>
             </div>
@@ -2979,12 +2979,12 @@ class GomokuGame {
                 break;
                 
             case 'join':
-                console.log('玩家加入:', message.data.userId);
+                console.log('Player joined:', message.data.userId);
                 this.updatePlayerCount();
                 break;
                 
             case 'leave':
-                console.log('玩家離開:', message.data.userId);
+                console.log('Player left:', message.data.userId);
                 this.updatePlayerCount();
                 break;
                 
@@ -3016,7 +3016,7 @@ class GomokuGame {
         if (blackPlayerEl) {
             if (this.gameState.players.black) {
                 const userId = this.gameState.players.black;
-                blackPlayerEl.textContent = (userId.startsWith('匿名玩家_') || userId.startsWith('Anonymous_')) ? 
+                blackPlayerEl.textContent = userId.startsWith('Anonymous_') ? 
                     userId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${userId.slice(-6)}\`;
             } else {
                 blackPlayerEl.textContent = currentLanguage === 'zh-TW' ? '等待中...' : 'Waiting...';
@@ -3026,7 +3026,7 @@ class GomokuGame {
         if (whitePlayerEl) {
             if (this.gameState.players.white) {
                 const userId = this.gameState.players.white;
-                whitePlayerEl.textContent = (userId.startsWith('匿名玩家_') || userId.startsWith('Anonymous_')) ? 
+                whitePlayerEl.textContent = userId.startsWith('Anonymous_') ? 
                     userId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${userId.slice(-6)}\`;
             } else {
                 whitePlayerEl.textContent = currentLanguage === 'zh-TW' ? '等待中...' : 'Waiting...';
@@ -3093,8 +3093,14 @@ class GomokuGame {
         if (chatMessages) {
             const messageEl = document.createElement('div');
             messageEl.className = 'chat-message';
+            
+            // 統一格式化用戶ID顯示
+            const displayUserId = chatData.userId.startsWith('Anonymous_') ? 
+                chatData.userId : 
+                \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${chatData.userId.slice(-6)}\`;
+            
             messageEl.innerHTML = \`
-                <span class="chat-user">\${chatData.userId}:</span>
+                <span class="chat-user">\${displayUserId}:</span>
                 <span class="chat-text">\${chatData.message}</span>
             \`;
             chatMessages.appendChild(messageEl);
@@ -3626,7 +3632,7 @@ class GomokuGame {
         recentMoves.forEach((move, index) => {
             const moveEl = document.createElement('div');
             moveEl.className = 'move-item';
-            moveEl.textContent = \`\${startIndex + index + 1}. \${move.player === 'black' ? '黑' : '白'}(\${move.position.row}, \${move.position.col})\`;
+            moveEl.textContent = \`\${startIndex + index + 1}. \${move.player === 'black' ? (currentLanguage === 'zh-TW' ? '黑' : 'B') : (currentLanguage === 'zh-TW' ? '白' : 'W')}(\${move.position.row}, \${move.position.col})\`;
             movesListEl.appendChild(moveEl);
         });
         
@@ -3697,9 +3703,9 @@ class GomokuGame {
         
         // 設置彈窗內容
         if (this.gameState.winner === 'draw') {
-            titleEl.textContent = '平局';
+            titleEl.textContent = currentLanguage === 'zh-TW' ? '平局' : 'Draw';
             iconEl.textContent = '🤝';
-            messageEl.textContent = '勢均力敵，不分勝負！';
+            messageEl.textContent = currentLanguage === 'zh-TW' ? '勢均力敵，不分勝負！' : 'Evenly matched, no winner!';
             modal.querySelector('.game-over-content').classList.remove('winner-effect');
         } else {
             const isPlayerWin = (this.gameState.winner === 'black' && this.myPlayer === 'black') || 
@@ -3707,27 +3713,34 @@ class GomokuGame {
             
             if (this.gameState.mode === 'ai') {
                 if (isPlayerWin) {
-                    titleEl.textContent = '恭喜獲勝！';
+                    titleEl.textContent = currentLanguage === 'zh-TW' ? '恭喜獲勝！' : 'Congratulations!';
                     iconEl.textContent = '🎉';
-                    messageEl.textContent = '您戰勝了 AI，棋藝精湛！';
+                    messageEl.textContent = currentLanguage === 'zh-TW' ? '您戰勝了 AI，棋藝精湛！' : 'You defeated the AI, excellent skills!';
                     modal.querySelector('.game-over-content').classList.add('winner-effect');
                 } else {
-                    titleEl.textContent = '遊戲結束';
+                    titleEl.textContent = currentLanguage === 'zh-TW' ? '遊戲結束' : 'Game Over';
                     iconEl.textContent = '🤖';
-                    messageEl.textContent = 'AI 獲勝，再接再厲！';
+                    messageEl.textContent = currentLanguage === 'zh-TW' ? 'AI 獲勝，再接再厲！' : 'AI wins, keep trying!';
                     modal.querySelector('.game-over-content').classList.remove('winner-effect');
                 }
             } else {
-                titleEl.textContent = \`\${this.gameState.winner === 'black' ? '黑棋' : '白棋'}獲勝！\`;
+                const winnerText = this.gameState.winner === 'black' ? 
+                    (currentLanguage === 'zh-TW' ? '黑棋' : 'Black') : 
+                    (currentLanguage === 'zh-TW' ? '白棋' : 'White');
+                titleEl.textContent = \`\${winnerText}\${currentLanguage === 'zh-TW' ? '獲勝！' : ' Wins!'}\`;
                 iconEl.textContent = '👑';
-                messageEl.textContent = \`\${this.gameState.winner === 'black' ? '黑棋' : '白棋'}玩家獲得勝利！\`;
+                messageEl.textContent = \`\${winnerText}\${currentLanguage === 'zh-TW' ? '玩家獲得勝利！' : ' player wins!'}\`;
                 modal.querySelector('.game-over-content').classList.add('winner-effect');
             }
         }
         
         // 設置統計信息
-        durationEl.textContent = \`遊戲時長: \${minutes}分\${seconds}秒\`;
-        movesEl.textContent = \`總步數: \${this.gameState.moves.length}步\`;
+        durationEl.textContent = currentLanguage === 'zh-TW' ? 
+            \`遊戲時長: \${minutes}分\${seconds}秒\` : 
+            \`Game Duration: \${minutes}m\${seconds}s\`;
+        movesEl.textContent = currentLanguage === 'zh-TW' ? 
+            \`總步數: \${this.gameState.moves.length}步\` : 
+            \`Total Moves: \${this.gameState.moves.length}\`;
         
         // 顯示彈窗
         modal.style.display = 'flex';
@@ -3763,7 +3776,7 @@ class GomokuGame {
         
         if (leaveBtn) {
             leaveBtn.onclick = function() {
-                console.log('離開房間按鈕被點擊');
+                console.log('Leave room button clicked');
                 leaveRoom();
             };
         }
@@ -3856,7 +3869,7 @@ class GomokuGame {
         const greetingEl = document.getElementById('user-greeting');
         if (greetingEl) {
             const userId = this.getCurrentUserId();
-            const anonymousId = \`\${currentLanguage === 'zh-TW' ? '匿名玩家' : 'Anonymous'}_\${userId.slice(-6)}\`;
+            const anonymousId = \`Anonymous_\${userId.slice(-6)}\`;
             greetingEl.textContent = \`\${currentLanguage === 'zh-TW' ? '您好，' : 'Hello, '}\${anonymousId}\`;
         }
         this.updateProfileCard(null);
@@ -3965,15 +3978,15 @@ class GomokuGame {
         historyEl.innerHTML = history.map(game => \`
             <div class="history-item">
                 <div class="game-result \${game.result}">
-                    \${game.result === 'win' ? '勝利' : game.result === 'loss' ? '失敗' : '平局'}
+                    \${game.result === 'win' ? (currentLanguage === 'zh-TW' ? '勝利' : 'Win') : game.result === 'loss' ? (currentLanguage === 'zh-TW' ? '失敗' : 'Loss') : (currentLanguage === 'zh-TW' ? '平局' : 'Draw')}
                 </div>
                 <div class="game-details">
-                    <p>模式: \${game.mode === 'ai' ? 'AI 對戰' : '玩家對戰'}</p>
-                    <p>時長: \${Math.floor(game.duration / 60000)}分\${Math.floor((game.duration % 60000) / 1000)}秒</p>
-                    <p>評分變化: \${game.ratingChange > 0 ? '+' : ''}\${game.ratingChange}</p>
+                    <p>\${currentLanguage === 'zh-TW' ? '模式' : 'Mode'}: \${game.mode === 'ai' ? (currentLanguage === 'zh-TW' ? 'AI 對戰' : 'AI Game') : (currentLanguage === 'zh-TW' ? '玩家對戰' : 'PvP Game')}</p>
+                    <p>\${currentLanguage === 'zh-TW' ? '時長' : 'Duration'}: \${Math.floor(game.duration / 60000)}\${currentLanguage === 'zh-TW' ? '分' : 'm'}\${Math.floor((game.duration % 60000) / 1000)}\${currentLanguage === 'zh-TW' ? '秒' : 's'}</p>
+                    <p>\${currentLanguage === 'zh-TW' ? '評分變化' : 'Rating Change'}: \${game.ratingChange > 0 ? '+' : ''}\${game.ratingChange}</p>
                 </div>
                 <div class="game-date">
-                    \${new Date(game.createdAt).toLocaleDateString('zh-TW')}
+                    \${new Date(game.createdAt).toLocaleDateString(currentLanguage === 'zh-TW' ? 'zh-TW' : 'en-US')}
                 </div>
             </div>
         \`).join('');
@@ -4179,7 +4192,7 @@ function showGuestProfileDirectly() {
             userId = 'user_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('userId', userId);
         }
-        const anonymousId = \`\${currentLanguage === 'zh-TW' ? '匿名玩家' : 'Anonymous'}_\${userId.slice(-6)}\`;
+        const anonymousId = \`Anonymous_\${userId.slice(-6)}\`;
         greetingEl.textContent = \`\${currentLanguage === 'zh-TW' ? '您好，' : 'Hello, '}\${anonymousId}\`;
     }
     updateProfileCardDirectly(null);
@@ -4485,7 +4498,7 @@ function returnToHome() {
         document.body.classList.remove('modal-open');
     }
     
-    // 如果在房間中，先發送離開訊息
+    // If in a room, send leave message first
     if (game && game.websocket && window.location.pathname === '/room') {
         try {
             game.websocket.send(JSON.stringify({
@@ -4495,7 +4508,7 @@ function returnToHome() {
             }));
             game.websocket.close();
         } catch (error) {
-            console.log('發送離開訊息失敗:', error);
+            console.log('Failed to send leave message:', error);
         }
     }
     
@@ -4520,16 +4533,16 @@ function analyzeGame() {
         const contentEl = document.getElementById('analysis-content');
         if (contentEl) {
             contentEl.innerHTML = \`
-                <h4>🎯 對局總結</h4>
-                <p><strong>遊戲結果：</strong>\${game.gameState.winner === 'draw' ? '平局' : 
-                    (game.gameState.winner === 'black' ? '黑棋獲勝' : '白棋獲勝')}</p>
-                <p><strong>總步數：</strong>\${game.gameState.moves.length} 步</p>
-                <p><strong>遊戲時長：</strong>\${Math.floor((game.gameState.updatedAt - game.gameState.createdAt) / 60000)}分鐘</p>
+                <h4>🎯 \${currentLanguage === 'zh-TW' ? '對局總結' : 'Game Summary'}</h4>
+                <p><strong>\${currentLanguage === 'zh-TW' ? '遊戲結果：' : 'Game Result:'}</strong>\${game.gameState.winner === 'draw' ? (currentLanguage === 'zh-TW' ? '平局' : 'Draw') : 
+                    (game.gameState.winner === 'black' ? (currentLanguage === 'zh-TW' ? '黑棋獲勝' : 'Black Wins') : (currentLanguage === 'zh-TW' ? '白棋獲勝' : 'White Wins'))}</p>
+                <p><strong>\${currentLanguage === 'zh-TW' ? '總步數：' : 'Total Moves:'}</strong>\${game.gameState.moves.length} \${currentLanguage === 'zh-TW' ? '步' : 'moves'}</p>
+                <p><strong>\${currentLanguage === 'zh-TW' ? '遊戲時長：' : 'Game Duration:'}</strong>\${Math.floor((game.gameState.updatedAt - game.gameState.createdAt) / 60000)}\${currentLanguage === 'zh-TW' ? '分鐘' : ' minutes'}</p>
                 <hr style="margin: 1rem 0;">
-                <p>🔍 <strong>棋局分析：</strong></p>
-                <p>• 這是一局精彩的對戰</p>
-                <p>• 雙方都展現了不錯的棋藝</p>
-                <p>• 關鍵轉折點在中盤階段</p>
+                <p>🔍 <strong>\${currentLanguage === 'zh-TW' ? '棋局分析：' : 'Game Analysis:'}</strong></p>
+                <p>• \${currentLanguage === 'zh-TW' ? '這是一局精彩的對戰' : 'This was an exciting game'}</p>
+                <p>• \${currentLanguage === 'zh-TW' ? '雙方都展現了不錯的棋藝' : 'Both players showed good skills'}</p>
+                <p>• \${currentLanguage === 'zh-TW' ? '關鍵轉折點在中盤階段' : 'Key turning point was in the middle game'}</p>
             \`;
         }
     }
@@ -4545,7 +4558,7 @@ function sendMessage() {
     // 立即在本地顯示自己的訊息
     const currentUserId = game.getCurrentUserId();
     game.displayChatMessage({
-        userId: currentUserId.startsWith('匿名玩家_') || currentUserId.startsWith('Anonymous_') ? currentUserId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${currentUserId.slice(-6)}\`,
+        userId: currentUserId.startsWith('Anonymous_') ? currentUserId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${currentUserId.slice(-6)}\`,
         message: message
     });
     
@@ -4561,7 +4574,7 @@ function sendMessage() {
 }
 
 function leaveRoom() {
-    console.log('嘗試離開房間');
+    console.log('Attempting to leave room');
     
     // 隱藏彈窗（如果有的話）
     const modal = document.getElementById('game-over-modal');
@@ -4570,7 +4583,7 @@ function leaveRoom() {
         document.body.classList.remove('modal-open');
     }
     
-    if (confirm('確定要離開房間嗎？')) {
+    if (confirm(currentLanguage === 'zh-TW' ? '確定要離開房間嗎？' : 'Are you sure you want to leave the room?')) {
         if (game && game.websocket) {
             try {
                 game.websocket.send(JSON.stringify({
@@ -4580,10 +4593,10 @@ function leaveRoom() {
                 }));
                 game.websocket.close();
             } catch (error) {
-                console.log('發送離開訊息失敗:', error);
+                console.log('Failed to send leave message:', error);
             }
         }
-        console.log('離開房間，返回首頁');
+        console.log('Leaving room, returning to home page');
         window.location.href = '/';
     }
 }
