@@ -29,13 +29,18 @@ export class AIEngine {
     gameState: GameState,
     difficulty: 'easy' | 'medium' | 'hard' = 'medium'
   ): Promise<AIMove> {
+    const startTime = Date.now();
+    console.log(`[AI] 開始生成落子 - 難度: ${difficulty}, 時間: ${new Date().toISOString()}`);
+    
     const aiPlayer = gameState.currentPlayer;
     if (!aiPlayer) {
       throw new Error('無效的玩家');
     }
 
     // 獲取可能的落子位置
+    const movesStartTime = Date.now();
     const availableMoves = GameLogic.getRelevantMoves(gameState.board);
+    console.log(`[AI] 獲取可用位置完成 - 耗時: ${Date.now() - movesStartTime}ms, 位置數: ${availableMoves.length}`);
 
     if (availableMoves.length === 0) {
       throw new Error('沒有可用的落子位置');
@@ -48,6 +53,7 @@ export class AIEngine {
 
     if (isEmpty) {
       const center = Math.floor(GameLogic.BOARD_SIZE / 2);
+      console.log(`[AI] 開局落子 - 總耗時: ${Date.now() - startTime}ms`);
       return {
         position: { row: center, col: center },
         confidence: 0.9,
@@ -60,48 +66,68 @@ export class AIEngine {
       let historicalSuggestions: { suggestions: Position[]; reasoning: string[] };
       let gameAdvantage: GameAnalysis | null = null;
       
-      // 簡單模式使用快速分析，但允許5秒超時
+      // 簡單模式使用快速分析，但允許10秒超時
       if (difficulty === 'easy') {
+        console.log(`[AI] 簡單模式 - 開始並行分析 (10秒超時)`);
+        const analysisStartTime = Date.now();
+        
         const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
         const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
-        const advantagePromise = this.analyzeGameAdvantage(gameState, aiPlayer);
         
-        // 簡單模式設置5秒超時
+        // 簡單模式設置10秒超時
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('AI 分析超時')), 5000);
+          setTimeout(() => {
+            console.log(`[AI] 簡單模式分析超時 (10秒)`);
+            reject(new Error('AI 分析超時'));
+          }, 10000);
         });
 
-        [boardAnalysis, historicalSuggestions, gameAdvantage] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise, advantagePromise]),
+        [boardAnalysis, historicalSuggestions] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise]),
           timeoutPromise
         ]).catch(() => {
           // 超時時使用快速分析
-          console.warn('簡單模式AI分析超時，使用快速模式');
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }, null];
+          console.warn('[AI] 簡單模式AI分析超時，使用快速模式');
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }];
         });
+        
+        // 使用基本優勢分析替代Text Classification
+        gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
+        
+        console.log(`[AI] 簡單模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms`);
       } else {
         // 中等和困難模式使用完整分析，但設置超時
+        const timeoutMs = difficulty === 'medium' ? 20000 : 30000;
+        console.log(`[AI] ${difficulty}模式 - 開始並行分析 (${timeoutMs}ms超時)`);
+        const analysisStartTime = Date.now();
+        
         const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
         const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
-        const advantagePromise = this.analyzeGameAdvantage(gameState, aiPlayer);
         
-        // 根據難度設置超時時間
-        const timeoutMs = difficulty === 'medium' ? 10000 : 20000;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('AI 分析超時')), timeoutMs);
+          setTimeout(() => {
+            console.log(`[AI] ${difficulty}模式分析超時 (${timeoutMs}ms)`);
+            reject(new Error('AI 分析超時'));
+          }, timeoutMs);
         });
 
-        [boardAnalysis, historicalSuggestions, gameAdvantage] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise, advantagePromise]),
+        [boardAnalysis, historicalSuggestions] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise]),
           timeoutPromise
         ]).catch(() => {
           // 超時時使用快速分析
-          console.warn('AI 分析超時，使用快速模式');
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }, null];
+          console.warn(`[AI] ${difficulty}模式分析超時，使用快速模式`);
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }];
         });
+        
+        // 使用基本優勢分析替代Text Classification
+        gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
+        
+        console.log(`[AI] ${difficulty}模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms`);
       }
 
       // 根據分析結果、歷史建議和難度選擇最佳落子
+      const selectStartTime = Date.now();
       const bestMove = await this.selectBestMove(
         gameState,
         availableMoves,
@@ -111,10 +137,12 @@ export class AIEngine {
         historicalSuggestions,
         gameAdvantage
       );
+      console.log(`[AI] 選擇最佳落子完成 - 耗時: ${Date.now() - selectStartTime}ms`);
+      console.log(`[AI] 總生成時間: ${Date.now() - startTime}ms`);
 
       return bestMove;
     } catch (error) {
-      console.error('AI 生成落子時發生錯誤:', error);
+      console.error(`[AI] 生成落子時發生錯誤 (總耗時: ${Date.now() - startTime}ms):`, error);
 
       // 降級到基本策略
       return this.fallbackMove(gameState, availableMoves, aiPlayer);
@@ -233,18 +261,28 @@ export class AIEngine {
     suggestions: Position[];
     reasoning: string[];
   }> {
+    const startTime = Date.now();
+    console.log(`[AI] 開始獲取歷史建議`);
+    
     try {
-      // 設置5秒超時，如果超時則返回空建議
+      // 設置10秒超時，如果超時則返回空建議
       const timeoutPromise = new Promise<{ suggestions: Position[]; reasoning: string[] }>((_, reject) => {
-        setTimeout(() => reject(new Error('歷史建議超時')), 5000);
+        setTimeout(() => {
+          console.log(`[AI] 歷史建議超時 (10秒)`);
+          reject(new Error('歷史建議超時'));
+        }, 10000);
       });
 
-      return await Promise.race([
+      const result = await Promise.race([
         this.vectorizeService.getHistoricalMovesSuggestions(gameState),
         timeoutPromise
       ]);
+      
+      console.log(`[AI] 歷史建議完成 - 耗時: ${Date.now() - startTime}ms, 建議數: ${result.suggestions.length}`);
+      return result;
     } catch (error) {
-      console.warn('獲取歷史建議失敗，使用快速模式:', error);
+      const errorTime = Date.now() - startTime;
+      console.warn(`[AI] 獲取歷史建議失敗 (耗時: ${errorTime}ms)，使用快速模式:`, error);
       return {
         suggestions: [],
         reasoning: ['快速模式：無歷史建議'],
@@ -259,6 +297,9 @@ export class AIEngine {
     gameState: GameState,
     player: Player
   ): Promise<string> {
+    const startTime = Date.now();
+    console.log(`[AI] 開始棋盤狀態分析 - ${player}`);
+    
     const boardString = GameLogic.boardToString(gameState.board);
     // 計算棋盤上的棋子數量來估算步數
     let totalMoves = 0;
@@ -273,7 +314,7 @@ export class AIEngine {
     const moveHistory = totalMoves > 0 ? `已進行 ${totalMoves} 步` : '遊戲開始';
 
     // 優化提示詞以平衡速度和質量
-    const prompt = `你是專業的五子棋AI。請分析以下棋盤狀態：
+    const prompt = `你是五子棋專家，快速簡潔分析以下棋盤狀態：
 
 棋盤狀態 (B=黑棋, W=白棋, .=空位):
 ${boardString}
@@ -290,6 +331,9 @@ ${boardString}
 請用繁體中文回答，保持分析簡潔明確，不超過150字。`;
 
     try {
+      console.log(`[AI] 調用Llama模型分析棋盤狀態`);
+      const llamaStartTime = Date.now();
+      
       const response = await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
         messages: [
           {
@@ -305,9 +349,14 @@ ${boardString}
         temperature: 0.2,
       });
 
+      const llamaTime = Date.now() - llamaStartTime;
+      console.log(`[AI] Llama模型分析完成 - 耗時: ${llamaTime}ms`);
+      console.log(`[AI] 棋盤狀態分析總耗時: ${Date.now() - startTime}ms`);
+
       return response.response || '無法分析當前局面';
     } catch (error) {
-      console.error('AI分析失敗，使用快速分析:', error);
+      const errorTime = Date.now() - startTime;
+      console.error(`[AI] 棋盤狀態分析失敗 (耗時: ${errorTime}ms)，使用快速分析:`, error);
       // 如果AI失敗，返回快速分析結果
       return this.getQuickAnalysis(gameState, player);
     }
@@ -578,66 +627,6 @@ ${boardString}
     };
   }
 
-  /**
-   * 使用 Text Classification 分析局面優劣勢
-   */
-  async analyzeGameAdvantage(
-    gameState: GameState,
-    player: Player
-  ): Promise<GameAnalysis> {
-    const boardString = GameLogic.boardToString(gameState.board);
-    const moveCount = gameState.moves.length;
-
-    // 構建分析文本
-    const analysisText = `五子棋局面分析：
-棋盤大小：15x15
-已下棋子數：${moveCount}
-當前玩家：${player === 'black' ? '黑棋' : '白棋'}
-棋盤狀態：
-${boardString}
-
-分析這個局面對當前玩家是優勢、劣勢還是平局。`;
-
-    try {
-      // 使用 Text Classification 判斷優劣勢
-      const classificationResult = await this.env.AI.run(
-        '@cf/huggingface/distilbert-sst-2-int8',
-        {
-          text: analysisText,
-        }
-      );
-
-
-      // 根據分類結果和詳細分析確定優劣勢
-      let advantage: 'advantage' | 'disadvantage' | 'draw' = 'draw';
-      let confidence = 0.5;
-
-      if (
-        classificationResult.label === 'POSITIVE' &&
-        classificationResult.score && classificationResult.score > 0.7
-      ) {
-        advantage = 'advantage';
-        confidence = classificationResult.score;
-      } else if (
-        classificationResult.label === 'NEGATIVE' &&
-        classificationResult.score && classificationResult.score > 0.7
-      ) {
-        advantage = 'disadvantage';
-        confidence = classificationResult.score;
-      }
-
-      return {
-        advantage,
-        confidence,
-        reasoning: `局面分析：${advantage === 'advantage' ? '優勢' : advantage === 'disadvantage' ? '劣勢' : '平局'} (信心度: ${(confidence * 100).toFixed(1)}%)`,
-      };
-    } catch (error) {
-      console.error('分析局面優劣勢時發生錯誤:', error);
-
-      // 降級到基本分析
-      return this.basicAdvantageAnalysis(gameState, player);
-    }
-  }
 
   /**
    * 基本優劣勢分析（降級方案）

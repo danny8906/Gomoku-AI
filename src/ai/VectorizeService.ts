@@ -56,28 +56,42 @@ export class VectorizeService {
     limit: number = 5, // 減少搜索數量
     threshold: number = 0.75 // 降低閾值以獲得更快結果
   ): Promise<GameVector[]> {
+    const startTime = Date.now();
+    console.log(`[Vectorize] 開始查找相似局面 - limit: ${limit}, threshold: ${threshold}`);
+    
     try {
       // 生成當前棋盤的描述和向量
+      const descStartTime = Date.now();
       const boardDescription = this.generateBoardDescription(gameState);
+      console.log(`[Vectorize] 生成棋盤描述完成 - 耗時: ${Date.now() - descStartTime}ms`);
+      
+      const embedStartTime = Date.now();
       const queryVector = await this.generateEmbedding(boardDescription);
+      console.log(`[Vectorize] 生成向量嵌入完成 - 耗時: ${Date.now() - embedStartTime}ms`);
 
       // 在 Vectorize 中搜索相似向量
+      const queryStartTime = Date.now();
       const results = await this.env.VECTORIZE.query(queryVector, {
         topK: limit,
         returnMetadata: true,
         returnValues: true,
       });
+      console.log(`[Vectorize] 向量搜索完成 - 耗時: ${Date.now() - queryStartTime}ms, 找到: ${results.matches.length}個結果`);
 
       // 過濾結果，只返回相似度高於閾值的
-      return results.matches
+      const filtered = results.matches
         .filter((match: any) => match.score >= threshold)
         .map((match: any) => ({
           id: match.id,
           values: match.values || [],
           metadata: match.metadata as GameVector['metadata'],
         }));
+      
+      console.log(`[Vectorize] 相似局面查找完成 - 總耗時: ${Date.now() - startTime}ms, 過濾後: ${filtered.length}個`);
+      return filtered;
     } catch (error) {
-      console.error('查找相似遊戲局面失敗:', error);
+      const errorTime = Date.now() - startTime;
+      console.error(`[Vectorize] 查找相似局面失敗 (耗時: ${errorTime}ms):`, error);
       return [];
     }
   }
@@ -89,11 +103,17 @@ export class VectorizeService {
     suggestions: Position[];
     reasoning: string[];
   }> {
+    const startTime = Date.now();
+    console.log(`[Vectorize] 開始獲取歷史建議`);
+    
     try {
       // 查找相似局面（減少搜索數量以提高速度）
+      const similarStartTime = Date.now();
       const similarGames = await this.findSimilarGameStates(gameState, 3, 0.7);
+      console.log(`[Vectorize] 查找相似局面完成 - 耗時: ${Date.now() - similarStartTime}ms, 找到: ${similarGames.length}個`);
 
       if (similarGames.length === 0) {
+        console.log(`[Vectorize] 沒有找到相似局面 - 總耗時: ${Date.now() - startTime}ms`);
         return {
           suggestions: [],
           reasoning: ['沒有找到相似的歷史局面'],
@@ -135,9 +155,11 @@ export class VectorizeService {
         `最常見的走法出現頻率: ${sortedMoves.map(([_, data]) => data.count).join(', ')}`
       );
 
+      console.log(`[Vectorize] 歷史建議完成 - 總耗時: ${Date.now() - startTime}ms, 建議數: ${suggestions.length}`);
       return { suggestions, reasoning };
     } catch (error) {
-      console.error('獲取歷史棋譜建議失敗:', error);
+      const errorTime = Date.now() - startTime;
+      console.error(`[Vectorize] 獲取歷史建議失敗 (耗時: ${errorTime}ms):`, error);
       return {
         suggestions: [],
         reasoning: ['獲取歷史建議時發生錯誤'],
@@ -365,16 +387,32 @@ ${boardString}
    * 使用 Text Embeddings 生成向量
    */
   private async generateEmbedding(text: string): Promise<number[]> {
+    const startTime = Date.now();
+    console.log(`[Vectorize] 開始生成文本嵌入 (15秒超時)`);
+    
     try {
-      const result = await this.env.AI.run('@cf/baai/bge-base-en-v1.5', {
-        text: [text],
+      // 設置超時保護 - 15秒超時
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.log(`[Vectorize] 文本嵌入生成超時 (15秒)`);
+          reject(new Error('文本嵌入生成超時'));
+        }, 15000);
       });
 
+      const result = await Promise.race([
+        this.env.AI.run('@cf/baai/bge-m3', {
+          text: [text],
+        }),
+        timeoutPromise
+      ]);
+
+      console.log(`[Vectorize] 文本嵌入生成完成 - 耗時: ${Date.now() - startTime}ms, 維度: ${result.data[0].length}`);
       return result.data[0];
     } catch (error) {
-      console.error('生成文本嵌入失敗:', error);
-      // 返回零向量作為降級方案
-      return new Array(384).fill(0);
+      const errorTime = Date.now() - startTime;
+      console.error(`[Vectorize] 生成文本嵌入失敗 (耗時: ${errorTime}ms):`, error);
+      // 返回1024維零向量作為降級方案 (與新的Vectorize兼容)
+      return new Array(1024).fill(0);
     }
   }
 
