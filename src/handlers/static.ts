@@ -4289,26 +4289,26 @@ function copyRoomUrl() {
         roomUrlInput.setSelectionRange(0, 99999); // 對於移動設備
         
         try {
-            // 嘗試複製到剪貼板
+            // Try to copy to clipboard
             document.execCommand('copy');
             
             // 更新按鈕狀態
             copyBtn.classList.add('copied');
             copyIcon.textContent = '✓';
-            copyBtn.innerHTML = '<span id="copy-icon">✓</span> 已複製';
+            copyBtn.innerHTML = '<span id="copy-icon">✓</span> ' + t('copied');
             
             // 2秒後恢復原始狀態
             setTimeout(() => {
                 copyBtn.classList.remove('copied');
                 copyIcon.textContent = '📋';
-                copyBtn.innerHTML = '<span id="copy-icon">📋</span> 複製網址';
+                copyBtn.innerHTML = '<span id="copy-icon">📋</span> ' + t('copyRoomUrl');
             }, 2000);
             
             // 顯示成功提示
             showToast(t('copied'), 'success');
             
         } catch (err) {
-            console.error('複製失敗:', err);
+            console.error('Copy failed:', err);
             
             // 如果 execCommand 失敗，嘗試使用 Clipboard API
             if (navigator.clipboard) {
@@ -4316,21 +4316,21 @@ function copyRoomUrl() {
                     // 更新按鈕狀態
                     copyBtn.classList.add('copied');
                     copyIcon.textContent = '✓';
-                    copyBtn.innerHTML = '<span id="copy-icon">✓</span> 已複製';
+                    copyBtn.innerHTML = '<span id="copy-icon">✓</span> ' + t('copied');
                     
                     setTimeout(() => {
                         copyBtn.classList.remove('copied');
                         copyIcon.textContent = '📋';
-                        copyBtn.innerHTML = '<span id="copy-icon">📋</span> 複製網址';
+                        copyBtn.innerHTML = '<span id="copy-icon">📋</span> ' + t('copyRoomUrl');
                     }, 2000);
                     
                     showToast(t('copied'), 'success');
                 }).catch((clipboardErr) => {
-                    console.error('Clipboard API 複製失敗:', clipboardErr);
+                    console.error('Clipboard API copy failed:', clipboardErr);
                     showToast(t('copyFailed'), 'error');
                 });
             } else {
-                showToast('複製失敗，請手動複製網址', 'error');
+                showToast(t('copyFailed'), 'error');
             }
         }
     }
