@@ -73,8 +73,8 @@ function getIndexHTML(t: Translations, language: string): string {
         <header class="header">
             <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI ${t.gameTitle}</h1>
             <div class="header-right">
-                <p id="user-greeting">載入中...</p>
-                <button class="btn danger header-logout-btn" onclick="logout()" style="display: none;">登出</button>
+                <p id="user-greeting">${language === 'zh-TW' ? '載入中...' : 'Loading...'}</p>
+                <button class="btn danger header-logout-btn" onclick="logout()" style="display: none;">${language === 'zh-TW' ? '登出' : 'Logout'}</button>
             </div>
         </header>
         
@@ -111,10 +111,10 @@ function getIndexHTML(t: Translations, language: string): string {
                     </div>
                     
                     <div class="feature-card" id="profile-card">
-                        <h3>👤 個人資料</h3>
+                        <h3>👤 ${language === 'zh-TW' ? '個人資料' : 'Profile'}</h3>
                         <div id="profile-content">
-                            <p id="profile-description">管理帳號和戰績</p>
-                            <button class="btn secondary" id="profile-button" onclick="showLoginModal()">登入/註冊</button>
+                            <p id="profile-description">${language === 'zh-TW' ? '管理帳號和戰績' : 'Manage account and stats'}</p>
+                            <button class="btn secondary" id="profile-button" onclick="showLoginModal()">${language === 'zh-TW' ? '登入/註冊' : 'Login/Register'}</button>
                         </div>
                     </div>
                 </div>
@@ -123,20 +123,20 @@ function getIndexHTML(t: Translations, language: string): string {
             <div id="room-options" class="modal" style="display: none;">
                 <div class="modal-content">
                     <span class="close" onclick="hideRoomOptions()">&times;</span>
-                    <h3>玩家對戰選項</h3>
+                    <h3>${language === 'zh-TW' ? '玩家對戰選項' : 'PvP Game Options'}</h3>
                     <div class="room-buttons">
-                        <button class="btn primary" onclick="createRoom()">創建房間</button>
-                        <button class="btn secondary" onclick="showJoinRoom()">加入房間</button>
+                        <button class="btn primary" onclick="createRoom()">${t.createRoom}</button>
+                        <button class="btn secondary" onclick="showJoinRoom()">${t.joinRoom}</button>
                     </div>
                     <div id="join-room" class="join-room-container" style="display: none;">
                         <div class="room-input-group">
-                            <input type="text" id="roomCode" class="room-code-input" placeholder="輸入房間代碼" maxlength="4">
+                            <input type="text" id="roomCode" class="room-code-input" placeholder="${t.enterRoomCode}" maxlength="4">
                             <button class="btn primary room-join-btn" onclick="joinRoom()">
-                                <span>🚪</span> 加入房間
+                                <span>🚪</span> ${t.joinRoom}
                             </button>
                         </div>
                         <div class="room-code-hint">
-                            <p>💡 房間代碼為4位英文字母</p>
+                            <p>💡 ${language === 'zh-TW' ? '房間代碼為4位英文字母' : 'Room code is 4 letters'}</p>
                         </div>
                     </div>
                 </div>
@@ -145,22 +145,22 @@ function getIndexHTML(t: Translations, language: string): string {
             <div id="login-modal" class="modal" style="display: none;">
                 <div class="modal-content">
                     <span class="close" onclick="hideLoginModal()">&times;</span>
-                    <h3 id="auth-title">登入</h3>
+                    <h3 id="auth-title">${language === 'zh-TW' ? '登入' : 'Login'}</h3>
                     <form id="auth-form">
                         <div class="form-group">
-                            <input type="text" id="username" class="form-input" placeholder="用戶名" required>
+                            <input type="text" id="username" class="form-input" placeholder="${language === 'zh-TW' ? '用戶名' : 'Username'}" required>
                         </div>
                         <div class="form-group" id="email-group" style="display: none;">
-                            <input type="email" id="email" class="form-input" placeholder="電子郵件 (註冊時需要)" style="display: none;">
+                            <input type="email" id="email" class="form-input" placeholder="${language === 'zh-TW' ? '電子郵件 (註冊時需要)' : 'Email (required for registration)'}" style="display: none;">
                         </div>
                         <div class="form-group">
-                            <input type="password" id="password" class="form-input" placeholder="密碼" required>
+                            <input type="password" id="password" class="form-input" placeholder="${language === 'zh-TW' ? '密碼' : 'Password'}" required>
                         </div>
-                        <button type="submit" class="btn primary">登入</button>
+                        <button type="submit" class="btn primary">${language === 'zh-TW' ? '登入' : 'Login'}</button>
                     </form>
                     <p style="margin-top: var(--spacing-4); text-align: center;">
-                        <span id="auth-switch-text">還沒有帳號？</span>
-                        <a href="#" id="auth-switch" onclick="toggleAuthMode()">註冊</a>
+                        <span id="auth-switch-text">${language === 'zh-TW' ? '還沒有帳號？' : 'No account yet?'}</span>
+                        <a href="#" id="auth-switch" onclick="toggleAuthMode()">${language === 'zh-TW' ? '註冊' : 'Register'}</a>
                     </p>
                 </div>
             </div>
@@ -168,25 +168,25 @@ function getIndexHTML(t: Translations, language: string): string {
             <div id="change-password-modal" class="modal" style="display: none;">
                 <div class="modal-content">
                     <span class="close" onclick="hideChangePasswordModal()">&times;</span>
-                    <h3>更改密碼</h3>
+                    <h3>${language === 'zh-TW' ? '更改密碼' : 'Change Password'}</h3>
                     <form id="change-password-form">
                         <div class="form-group">
-                            <input type="password" id="current-password" class="form-input" placeholder="當前密碼" required>
+                            <input type="password" id="current-password" class="form-input" placeholder="${language === 'zh-TW' ? '當前密碼' : 'Current Password'}" required>
                         </div>
                         <div class="form-group">
-                            <input type="password" id="new-password" class="form-input" placeholder="新密碼" required>
+                            <input type="password" id="new-password" class="form-input" placeholder="${language === 'zh-TW' ? '新密碼' : 'New Password'}" required>
                         </div>
                         <div class="form-group">
-                            <input type="password" id="confirm-password" class="form-input" placeholder="確認新密碼" required>
+                            <input type="password" id="confirm-password" class="form-input" placeholder="${language === 'zh-TW' ? '確認新密碼' : 'Confirm New Password'}" required>
                         </div>
-                        <button type="submit" class="btn primary">更改密碼</button>
+                        <button type="submit" class="btn primary">${language === 'zh-TW' ? '更改密碼' : 'Change Password'}</button>
                     </form>
                 </div>
             </div>
         </main>
         
         <footer class="footer">
-            <p>&copy; 2024 OmniAI 五子棋 - 由 Cloudflare Workers AI 驅動</p>
+            <p>&copy; 2024 OmniAI ${language === 'zh-TW' ? '五子棋' : 'Gomoku'} - ${language === 'zh-TW' ? '由 Cloudflare Workers AI 驅動' : 'Powered by Cloudflare Workers AI'}</p>
         </footer>
     </div>
     
@@ -239,37 +239,37 @@ function getGameHTML(t: Translations, language: string): string {
                     <div class="player-info">
                         <div class="player black">
                             <div class="player-piece"></div>
-                            <span>黑棋</span>
-                            <span id="black-player-name">玩家</span>
+                            <span>${language === 'zh-TW' ? '黑棋' : 'Black'}</span>
+                            <span id="black-player-name">${language === 'zh-TW' ? '玩家' : 'Player'}</span>
                         </div>
                         <div class="player white">
                             <div class="player-piece"></div>
-                            <span>白棋</span>
+                            <span>${language === 'zh-TW' ? '白棋' : 'White'}</span>
                             <span id="white-player-name">AI</span>
                         </div>
                     </div>
                     
                     <div class="move-history">
-                        <h4>走法記錄</h4>
+                        <h4>${language === 'zh-TW' ? '走法記錄' : 'Move History'}</h4>
                         <div id="moves-list"></div>
                     </div>
                     
                     <div class="ai-status" id="ai-status">
-                        <h4>🤖 AI 狀態</h4>
+                        <h4>🤖 ${language === 'zh-TW' ? 'AI 狀態' : 'AI Status'}</h4>
                         <div id="ai-status-content">
                             <div class="status-item">
-                                <span class="status-label">狀態：</span>
-                                <span id="ai-current-status">等待中</span>
+                                <span class="status-label">${language === 'zh-TW' ? '狀態：' : 'Status:'}</span>
+                                <span id="ai-current-status">${language === 'zh-TW' ? '等待中' : 'Waiting'}</span>
                             </div>
                             <div class="status-item">
-                                <span class="status-label">上一步用時：</span>
+                                <span class="status-label">${language === 'zh-TW' ? '上一步用時：' : 'Last Move Time:'}</span>
                                 <span id="ai-thinking-time">-</span>
                             </div>
                         </div>
                     </div>
                     
                     <div class="ai-analysis" id="ai-analysis" style="display: none;">
-                        <h4>AI 分析</h4>
+                        <h4>${language === 'zh-TW' ? 'AI 分析' : 'AI Analysis'}</h4>
                         <div id="analysis-content"></div>
                     </div>
                 </div>
@@ -280,20 +280,20 @@ function getGameHTML(t: Translations, language: string): string {
         <div id="game-over-modal" class="modal" style="display: none;">
             <div class="modal-content game-over-content">
                 <div class="game-result">
-                    <h2 id="game-result-title">遊戲結束</h2>
+                    <h2 id="game-result-title">${language === 'zh-TW' ? '遊戲結束' : 'Game Over'}</h2>
                     <div id="game-result-icon">🎉</div>
-                    <p id="game-result-message">恭喜獲勝！</p>
+                    <p id="game-result-message">${language === 'zh-TW' ? '恭喜獲勝！' : 'Congratulations!'}</p>
                     <div id="game-stats">
-                        <p id="game-duration">遊戲時長: --</p>
-                        <p id="total-moves">總步數: --</p>
+                        <p id="game-duration">${language === 'zh-TW' ? '遊戲時長' : 'Game Duration'}: --</p>
+                        <p id="total-moves">${language === 'zh-TW' ? '總步數' : 'Total Moves'}: --</p>
                     </div>
                 </div>
                 <div class="game-over-buttons">
                     <button class="btn primary" id="restart-btn">
-                        <span>🔄</span> 重新開始
+                        <span>🔄</span> ${t.restart}
                     </button>
                     <button class="btn secondary" id="home-btn">
-                        <span>🏠</span> 返回首頁
+                        <span>🏠</span> ${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}
                     </button>
                 </div>
             </div>
@@ -317,27 +317,27 @@ function getRoomHTML(t: Translations, language: string): string {
 <body>
     <div id="app">
         <header class="header">
-            <h1>♟️ OmniAI 五子棋房間</h1>
+            <h1>♟️ ${language === 'zh-TW' ? 'OmniAI 五子棋房間' : 'OmniAI Gomoku Room'}</h1>
             <div class="room-info">
-                <span id="room-code">房間代碼: ----</span>
-                <span id="player-count">玩家: 0/2</span>
-                <span id="current-player" style="display: none;">黑棋回合</span>
-                <span id="game-status" style="display: none;">遊戲進行中</span>
+                <span id="room-code">${language === 'zh-TW' ? '房間代碼' : 'Room Code'}: ----</span>
+                <span id="player-count">${language === 'zh-TW' ? '玩家' : 'Players'}: 0/2</span>
+                <span id="current-player" style="display: none;">${language === 'zh-TW' ? '黑棋回合' : 'Black Turn'}</span>
+                <span id="game-status" style="display: none;">${language === 'zh-TW' ? '遊戲進行中' : 'Game in Progress'}</span>
             </div>
         </header>
         
         <main class="game-main">
             <div class="room-container">
                 <div class="waiting-area" id="waiting-area">
-                    <h2>等待玩家加入...</h2>
+                    <h2>${language === 'zh-TW' ? '等待玩家加入...' : 'Waiting for players to join...'}</h2>
                     <div class="share-section">
-                        <p>分享房間代碼給朋友：<strong id="share-code">----</strong></p>
+                        <p>${language === 'zh-TW' ? '分享房間代碼給朋友：' : 'Share room code with friends:'}<strong id="share-code">----</strong></p>
                         <div class="url-section">
-                            <label for="room-url">房間網址：</label>
+                            <label for="room-url">${language === 'zh-TW' ? '房間網址：' : 'Room URL:'}</label>
                             <div class="url-input-group">
                                 <input type="text" id="room-url" readonly value="----" class="url-input">
                                 <button class="btn copy-btn" onclick="copyRoomUrl()" id="copy-url-btn">
-                                    <span id="copy-icon">📋</span> 複製網址
+                                    <span id="copy-icon">📋</span> ${language === 'zh-TW' ? '複製網址' : 'Copy URL'}
                                 </button>
                             </div>
                         </div>
@@ -345,7 +345,7 @@ function getRoomHTML(t: Translations, language: string): string {
                     <div class="loading">⏳</div>
                     <div class="waiting-controls">
                         <button class="btn secondary" onclick="goHome()">
-                            <span>🏠</span> 返回首頁
+                            <span>🏠</span> ${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}
                         </button>
                     </div>
                 </div>
@@ -364,27 +364,27 @@ function getRoomHTML(t: Translations, language: string): string {
                             <div class="player-info">
                                 <div class="player black">
                                     <div class="player-piece"></div>
-                                    <span>黑棋</span>
-                                    <span id="black-player">等待中...</span>
+                                    <span>${language === 'zh-TW' ? '黑棋' : 'Black'}</span>
+                                    <span id="black-player">${language === 'zh-TW' ? '等待中...' : 'Waiting...'}</span>
                                 </div>
                                 <div class="player white">
                                     <div class="player-piece"></div>
-                                    <span>白棋</span>
-                                    <span id="white-player">等待中...</span>
+                                    <span>${language === 'zh-TW' ? '白棋' : 'White'}</span>
+                                    <span id="white-player">${language === 'zh-TW' ? '等待中...' : 'Waiting...'}</span>
                                 </div>
                             </div>
                             
                             <div class="chat-area">
-                                <h4>💬 聊天室</h4>
+                                <h4>💬 ${language === 'zh-TW' ? '聊天室' : 'Chat Room'}</h4>
                                 <div id="chat-messages" class="chat-messages-container"></div>
                                 <div class="chat-input">
-                                    <input type="text" id="chat-input" placeholder="輸入訊息..." maxlength="200">
-                                    <button onclick="sendMessage()">發送</button>
+                                    <input type="text" id="chat-input" placeholder="${language === 'zh-TW' ? '輸入訊息...' : 'Type a message...'}" maxlength="200">
+                                    <button onclick="sendMessage()">${language === 'zh-TW' ? '發送' : 'Send'}</button>
                                 </div>
                             </div>
                             
                             <div class="move-history">
-                                <h4>📝 走法記錄</h4>
+                                <h4>📝 ${language === 'zh-TW' ? '走法記錄' : 'Move History'}</h4>
                                 <div id="moves-list"></div>
                             </div>
                         </div>
@@ -410,7 +410,7 @@ function getRoomHTML(t: Translations, language: string): string {
                         <span>🔄</span> 重新開始
                     </button>
                     <button class="btn secondary" id="home-btn">
-                        <span>🏠</span> 返回首頁
+                        <span>🏠</span> ${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}
                     </button>
                     <button class="btn secondary" id="leave-btn">
                         <span>🚪</span> 離開房間
@@ -425,22 +425,22 @@ function getRoomHTML(t: Translations, language: string): string {
 </html>`;
 }
 
-function getProfileHTML(_t: Translations, _language: string): string {
+function getProfileHTML(t: Translations, language: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>個人資料 - OmniAI 五子棋</title>
+    <title>${language === 'zh-TW' ? '個人資料' : 'Profile'} - OmniAI ${t.gameTitle}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1>👤 個人資料</h1>
+            <h1>👤 ${language === 'zh-TW' ? '個人資料' : 'Profile'}</h1>
             <div class="profile-actions">
-                <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
-                <button class="btn danger" onclick="logout()">登出</button>
+                <button class="btn secondary" onclick="window.location.href='/'">${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}</button>
+                <button class="btn danger" onclick="logout()">${language === 'zh-TW' ? '登出' : 'Logout'}</button>
             </div>
         </header>
         
@@ -448,9 +448,9 @@ function getProfileHTML(_t: Translations, _language: string): string {
             <div class="profile-container">
                 <div class="profile-card">
                     <div class="profile-header">
-                        <h2 id="username">載入中...</h2>
+                        <h2 id="username">${language === 'zh-TW' ? '載入中...' : 'Loading...'}</h2>
                         <div class="rating">
-                            <span>評分：</span>
+                            <span>${language === 'zh-TW' ? '評分：' : 'Rating:'}</span>
                             <strong id="rating">1200</strong>
                         </div>
                     </div>
@@ -458,32 +458,32 @@ function getProfileHTML(_t: Translations, _language: string): string {
                     <div class="stats-grid">
                         <div class="stat-card">
                             <h3 id="wins">0</h3>
-                            <p>勝利</p>
+                            <p>${language === 'zh-TW' ? '勝利' : 'Wins'}</p>
                         </div>
                         <div class="stat-card">
                             <h3 id="losses">0</h3>
-                            <p>失敗</p>
+                            <p>${language === 'zh-TW' ? '失敗' : 'Losses'}</p>
                         </div>
                         <div class="stat-card">
                             <h3 id="draws">0</h3>
-                            <p>平局</p>
+                            <p>${language === 'zh-TW' ? '平局' : 'Draws'}</p>
                         </div>
                         <div class="stat-card">
                             <h3 id="win-rate">0%</h3>
-                            <p>勝率</p>
+                            <p>${language === 'zh-TW' ? '勝率' : 'Win Rate'}</p>
                         </div>
                     </div>
                 </div>
                 
                 <div class="history-section">
-                    <h3>最近對局</h3>
+                    <h3>${language === 'zh-TW' ? '最近對局' : 'Recent Games'}</h3>
                     <div id="game-history" class="history-list">
-                        載入中...
+                        ${language === 'zh-TW' ? '載入中...' : 'Loading...'}
                     </div>
                 </div>
                 
                 <div class="rating-chart">
-                    <h3>評分變化</h3>
+                    <h3>${language === 'zh-TW' ? '評分變化' : 'Rating History'}</h3>
                     <canvas id="rating-chart" width="600" height="200"></canvas>
                 </div>
             </div>
@@ -495,43 +495,43 @@ function getProfileHTML(_t: Translations, _language: string): string {
 </html>`;
 }
 
-function getLeaderboardHTML(_t: Translations, _language: string): string {
+function getLeaderboardHTML(t: Translations, language: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>排行榜 - OmniAI 五子棋</title>
+    <title>${language === 'zh-TW' ? '排行榜' : 'Leaderboard'} - OmniAI ${t.gameTitle}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1>🏆 排行榜</h1>
-            <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
+            <h1>🏆 ${language === 'zh-TW' ? '排行榜' : 'Leaderboard'}</h1>
+            <button class="btn secondary" onclick="window.location.href='/'">${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}</button>
         </header>
         
         <main class="leaderboard-main">
             <div class="leaderboard-container">
                 <div class="search-section">
-                    <input type="text" id="search-input" placeholder="搜索玩家..." onkeyup="searchPlayers()">
+                    <input type="text" id="search-input" placeholder="${language === 'zh-TW' ? '搜索玩家...' : 'Search players...'}" onkeyup="searchPlayers()">
                 </div>
                 
                 <div class="leaderboard-table">
                     <table>
                         <thead>
                             <tr>
-                                <th>排名</th>
-                                <th>玩家</th>
-                                <th>評分</th>
-                                <th>勝利</th>
-                                <th>失敗</th>
-                                <th>勝率</th>
+                                <th>${language === 'zh-TW' ? '排名' : 'Rank'}</th>
+                                <th>${language === 'zh-TW' ? '玩家' : 'Player'}</th>
+                                <th>${language === 'zh-TW' ? '評分' : 'Rating'}</th>
+                                <th>${language === 'zh-TW' ? '勝利' : 'Wins'}</th>
+                                <th>${language === 'zh-TW' ? '失敗' : 'Losses'}</th>
+                                <th>${language === 'zh-TW' ? '勝率' : 'Win Rate'}</th>
                             </tr>
                         </thead>
                         <tbody id="leaderboard-body">
                             <tr>
-                                <td colspan="6">載入中...</td>
+                                <td colspan="6">${language === 'zh-TW' ? '載入中...' : 'Loading...'}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -2625,6 +2625,42 @@ function t(key) {
     return translations[key] || key;
 }
 
+function updateUIText() {
+    // 更新個人資料卡片
+    const profileDescription = document.getElementById('profile-description');
+    const profileButton = document.getElementById('profile-button');
+    
+    if (profileDescription && profileButton) {
+        if (currentLanguage === 'zh-TW') {
+            profileDescription.textContent = '管理帳號和戰績';
+            profileButton.textContent = '登入/註冊';
+        } else {
+            profileDescription.textContent = 'Manage account and stats';
+            profileButton.textContent = 'Login/Register';
+        }
+    }
+    
+    // 更新登入模態框
+    const authTitle = document.getElementById('auth-title');
+    const authSwitchText = document.getElementById('auth-switch-text');
+    const authSwitch = document.getElementById('auth-switch');
+    const submitBtn = document.querySelector('#auth-form button');
+    
+    if (authTitle && authSwitchText && authSwitch && submitBtn) {
+        if (currentLanguage === 'zh-TW') {
+            authTitle.textContent = '登入';
+            authSwitchText.textContent = '還沒有帳號？';
+            authSwitch.textContent = '註冊';
+            submitBtn.textContent = '登入';
+        } else {
+            authTitle.textContent = 'Login';
+            authSwitchText.textContent = 'No account yet?';
+            authSwitch.textContent = 'Register';
+            submitBtn.textContent = 'Login';
+        }
+    }
+}
+
 function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = \`toast toast-\${type}\`;
@@ -2763,7 +2799,7 @@ class GomokuGame {
                 const roomUrlEl = document.getElementById('room-url');
                 
                 if (roomCodeEl) {
-                    roomCodeEl.textContent = \`房間代碼: \${data.roomCode}\`;
+                    roomCodeEl.textContent = \`\${currentLanguage === 'zh-TW' ? '房間代碼' : 'Room Code'}: \${data.roomCode}\`;
                 }
                 
                 if (shareCodeEl) {
@@ -2816,7 +2852,7 @@ class GomokuGame {
                 const roomUrlEl = document.getElementById('room-url');
                 
                 if (roomCodeEl) {
-                    roomCodeEl.textContent = \`房間代碼: \${roomCode}\`;
+                    roomCodeEl.textContent = \`\${currentLanguage === 'zh-TW' ? '房間代碼' : 'Room Code'}: \${roomCode}\`;
                 }
                 
                 if (shareCodeEl) {
@@ -2967,7 +3003,7 @@ class GomokuGame {
         const playerCountEl = document.getElementById('player-count');
         if (playerCountEl && this.gameState) {
             const playerCount = Object.keys(this.gameState.players).filter(key => this.gameState.players[key]).length;
-            playerCountEl.textContent = \`玩家: \${playerCount}/2\`;
+            playerCountEl.textContent = \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Players'}: \${playerCount}/2\`;
         }
     }
     
@@ -2980,20 +3016,20 @@ class GomokuGame {
         if (blackPlayerEl) {
             if (this.gameState.players.black) {
                 const userId = this.gameState.players.black;
-                blackPlayerEl.textContent = userId.startsWith('匿名玩家_') ? 
-                    userId : \`玩家 \${userId.slice(-6)}\`;
+                blackPlayerEl.textContent = (userId.startsWith('匿名玩家_') || userId.startsWith('Anonymous_')) ? 
+                    userId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${userId.slice(-6)}\`;
             } else {
-                blackPlayerEl.textContent = '等待中...';
+                blackPlayerEl.textContent = currentLanguage === 'zh-TW' ? '等待中...' : 'Waiting...';
             }
         }
         
         if (whitePlayerEl) {
             if (this.gameState.players.white) {
                 const userId = this.gameState.players.white;
-                whitePlayerEl.textContent = userId.startsWith('匿名玩家_') ? 
-                    userId : \`玩家 \${userId.slice(-6)}\`;
+                whitePlayerEl.textContent = (userId.startsWith('匿名玩家_') || userId.startsWith('Anonymous_')) ? 
+                    userId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${userId.slice(-6)}\`;
             } else {
-                whitePlayerEl.textContent = '等待中...';
+                whitePlayerEl.textContent = currentLanguage === 'zh-TW' ? '等待中...' : 'Waiting...';
             }
         }
         
@@ -3014,13 +3050,15 @@ class GomokuGame {
         if (this.gameState.status === 'playing') {
             if (currentPlayerEl) {
                 currentPlayerEl.style.display = 'inline';
-                const playerName = this.gameState.currentPlayer === 'black' ? '黑棋' : '白棋';
-                currentPlayerEl.textContent = \`\${playerName}回合\`;
+                const playerName = this.gameState.currentPlayer === 'black' ? 
+                    (currentLanguage === 'zh-TW' ? '黑棋' : 'Black') : 
+                    (currentLanguage === 'zh-TW' ? '白棋' : 'White');
+                currentPlayerEl.textContent = \`\${playerName}\${currentLanguage === 'zh-TW' ? '回合' : ' Turn'}\`;
             }
             
             if (gameStatusEl) {
                 gameStatusEl.style.display = 'inline';
-                gameStatusEl.textContent = '遊戲進行中';
+                gameStatusEl.textContent = currentLanguage === 'zh-TW' ? '遊戲進行中' : 'Game in Progress';
             }
         } else if (this.gameState.status === 'finished') {
             if (currentPlayerEl) {
@@ -3030,10 +3068,12 @@ class GomokuGame {
             if (gameStatusEl) {
                 gameStatusEl.style.display = 'inline';
                 if (this.gameState.winner === 'draw') {
-                    gameStatusEl.textContent = '平局';
+                    gameStatusEl.textContent = currentLanguage === 'zh-TW' ? '平局' : 'Draw';
                 } else {
-                    const winnerName = this.gameState.winner === 'black' ? '黑棋' : '白棋';
-                    gameStatusEl.textContent = \`\${winnerName}獲勝\`;
+                    const winnerName = this.gameState.winner === 'black' ? 
+                        (currentLanguage === 'zh-TW' ? '黑棋' : 'Black') : 
+                        (currentLanguage === 'zh-TW' ? '白棋' : 'White');
+                    gameStatusEl.textContent = \`\${winnerName}\${currentLanguage === 'zh-TW' ? '獲勝' : ' Wins'}\`;
                 }
             }
         } else {
@@ -3068,9 +3108,9 @@ class GomokuGame {
             <div style="display: flex; align-items: center; gap: 1rem;">
                 <span>🎉</span>
                 <div>
-                    <div style="font-weight: 600;">房間創建成功！</div>
-                    <div style="font-size: 0.9rem; opacity: 0.9;">房間代碼: \${roomCode}</div>
-                    <div style="font-size: 0.8rem; opacity: 0.8;">您已自動加入房間</div>
+                    <div style="font-weight: 600;">\${currentLanguage === 'zh-TW' ? '房間創建成功！' : 'Room created successfully!'}</div>
+                    <div style="font-size: 0.9rem; opacity: 0.9;">\${currentLanguage === 'zh-TW' ? '房間代碼' : 'Room Code'}: \${roomCode}</div>
+                    <div style="font-size: 0.8rem; opacity: 0.8;">\${currentLanguage === 'zh-TW' ? '您已自動加入房間' : 'You have automatically joined the room'}</div>
                 </div>
             </div>
         \`;
@@ -3126,7 +3166,7 @@ class GomokuGame {
                 
                 // 如果是AI模式，初始化AI狀態
                 if (mode === 'ai') {
-                    this.updateAIStatus('等待中');
+                    this.updateAIStatus(currentLanguage === 'zh-TW' ? '等待中' : 'Waiting');
                     this.updateAIThinkingTime('-');
                 }
             }
@@ -3152,7 +3192,7 @@ class GomokuGame {
                 
                 // 如果是AI模式，初始化AI狀態
                 if (this.gameState.mode === 'ai') {
-                    this.updateAIStatus('等待中');
+                    this.updateAIStatus(currentLanguage === 'zh-TW' ? '等待中' : 'Waiting');
                     this.updateAIThinkingTime('-');
                 }
             }
@@ -3202,7 +3242,7 @@ class GomokuGame {
     async requestAIMove() {
         try {
             // 顯示AI思考狀態
-            this.updateAIStatus('思考中...', true);
+            this.updateAIStatus(currentLanguage === 'zh-TW' ? '思考中...' : 'Thinking...', true);
             
             const response = await fetch('/api/game/ai-move', {
                 method: 'POST',
@@ -3227,7 +3267,7 @@ class GomokuGame {
                 
                 // 更新AI狀態和思考用時
                 if (data.aiMove && data.aiMove.thinkingTime) {
-                    this.updateAIStatus('已完成', false);
+                    this.updateAIStatus(currentLanguage === 'zh-TW' ? '已完成' : 'Completed', false);
                     this.updateAIThinkingTime(data.aiMove.thinkingTime);
                 }
             }
@@ -3544,7 +3584,9 @@ class GomokuGame {
         // 更新當前玩家顯示
         const currentPlayerEl = document.getElementById('current-player');
         if (currentPlayerEl) {
-            currentPlayerEl.textContent = this.gameState.currentPlayer === 'black' ? '黑棋回合' : '白棋回合';
+            currentPlayerEl.textContent = this.gameState.currentPlayer === 'black' ? 
+                (currentLanguage === 'zh-TW' ? '黑棋回合' : 'Black Turn') : 
+                (currentLanguage === 'zh-TW' ? '白棋回合' : 'White Turn');
         }
         
         // 更新遊戲狀態
@@ -3552,15 +3594,18 @@ class GomokuGame {
         if (gameStatusEl) {
             if (this.gameState.status === 'finished') {
                 if (this.gameState.winner === 'draw') {
-                    gameStatusEl.textContent = '平局';
+                    gameStatusEl.textContent = currentLanguage === 'zh-TW' ? '平局' : 'Draw';
                 } else {
-                    gameStatusEl.textContent = \`\${this.gameState.winner === 'black' ? '黑棋' : '白棋'}獲勝\`;
+                    const winnerName = this.gameState.winner === 'black' ? 
+                        (currentLanguage === 'zh-TW' ? '黑棋' : 'Black') : 
+                        (currentLanguage === 'zh-TW' ? '白棋' : 'White');
+                    gameStatusEl.textContent = \`\${winnerName}\${currentLanguage === 'zh-TW' ? '獲勝' : ' Wins'}\`;
                 }
                 
                 // 顯示遊戲結束彈窗
                 this.showGameOverModal();
             } else {
-                gameStatusEl.textContent = '遊戲進行中';
+                gameStatusEl.textContent = currentLanguage === 'zh-TW' ? '遊戲進行中' : 'Game in Progress';
             }
         }
         
@@ -3811,8 +3856,8 @@ class GomokuGame {
         const greetingEl = document.getElementById('user-greeting');
         if (greetingEl) {
             const userId = this.getCurrentUserId();
-            const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
-            greetingEl.textContent = \`您好，\${anonymousId}\`;
+            const anonymousId = \`\${currentLanguage === 'zh-TW' ? '匿名玩家' : 'Anonymous'}_\${userId.slice(-6)}\`;
+            greetingEl.textContent = \`\${currentLanguage === 'zh-TW' ? '您好，' : 'Hello, '}\${anonymousId}\`;
         }
         this.updateProfileCard(null);
     }
@@ -3825,24 +3870,24 @@ class GomokuGame {
         if (user) {
             // 已登入用戶
             profileDescription.innerHTML = \`
-                <p>歡迎回來，<strong>\${user.username}</strong>！</p>
+                <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${user.username}</strong>！</p>
                 <div class="user-stats">
-                    <p>評分：<strong>\${user.rating}</strong></p>
+                    <p>\${currentLanguage === 'zh-TW' ? '評分：' : 'Rating:'}<strong>\${user.rating}</strong></p>
                     <p>勝率：<strong>\${user.wins + user.losses + user.draws > 0 ? 
                         ((user.wins / (user.wins + user.losses + user.draws)) * 100).toFixed(1) + '%' : '0%'}</strong></p>
                 </div>
             \`;
             profileButton.innerHTML = \`
-                <button class="btn secondary" onclick="window.location.href='/profile'">查看資料</button>
-                <button class="btn warning" onclick="showChangePasswordModal()">更改密碼</button>
+                <button class="btn secondary" onclick="window.location.href='/profile'">\${currentLanguage === 'zh-TW' ? '查看資料' : 'View Profile'}</button>
+                <button class="btn warning" onclick="showChangePasswordModal()">\${currentLanguage === 'zh-TW' ? '更改密碼' : 'Change Password'}</button>
             \`;
             if (headerLogoutBtn) {
                 headerLogoutBtn.style.display = 'inline-block';
             }
         } else {
             // 未登入用戶
-            profileDescription.textContent = '管理帳號和戰績';
-            profileButton.innerHTML = '<button class="btn secondary" onclick="showLoginModal()">登入/註冊</button>';
+            profileDescription.textContent = currentLanguage === 'zh-TW' ? '管理帳號和戰績' : 'Manage account and stats';
+            profileButton.innerHTML = \`<button class="btn secondary" onclick="showLoginModal()">\${currentLanguage === 'zh-TW' ? '登入/註冊' : 'Login/Register'}</button>\`;
             if (headerLogoutBtn) {
                 headerLogoutBtn.style.display = 'none';
             }
@@ -4134,8 +4179,8 @@ function showGuestProfileDirectly() {
             userId = 'user_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('userId', userId);
         }
-        const anonymousId = \`匿名玩家_\${userId.slice(-6)}\`;
-        greetingEl.textContent = \`您好，\${anonymousId}\`;
+        const anonymousId = \`\${currentLanguage === 'zh-TW' ? '匿名玩家' : 'Anonymous'}_\${userId.slice(-6)}\`;
+        greetingEl.textContent = \`\${currentLanguage === 'zh-TW' ? '您好，' : 'Hello, '}\${anonymousId}\`;
     }
     updateProfileCardDirectly(null);
 }
@@ -4311,20 +4356,20 @@ function toggleAuthMode() {
     const switchLink = document.getElementById('auth-switch');
     const submitBtn = document.querySelector('#auth-form button');
     
-    if (title.textContent === '登入') {
-        title.textContent = '註冊';
+    if (title.textContent === (currentLanguage === 'zh-TW' ? '登入' : 'Login')) {
+        title.textContent = currentLanguage === 'zh-TW' ? '註冊' : 'Register';
         emailGroup.style.display = 'block';
         emailField.style.display = 'block';
-        switchText.textContent = '已有帳號？';
-        switchLink.textContent = '登入';
-        submitBtn.textContent = '註冊';
+        switchText.textContent = currentLanguage === 'zh-TW' ? '已有帳號？' : 'Already have an account?';
+        switchLink.textContent = currentLanguage === 'zh-TW' ? '登入' : 'Login';
+        submitBtn.textContent = currentLanguage === 'zh-TW' ? '註冊' : 'Register';
     } else {
-        title.textContent = '登入';
+        title.textContent = currentLanguage === 'zh-TW' ? '登入' : 'Login';
         emailGroup.style.display = 'none';
         emailField.style.display = 'none';
-        switchText.textContent = '還沒有帳號？';
-        switchLink.textContent = '註冊';
-        submitBtn.textContent = '登入';
+        switchText.textContent = currentLanguage === 'zh-TW' ? '還沒有帳號？' : 'No account yet?';
+        switchLink.textContent = currentLanguage === 'zh-TW' ? '註冊' : 'Register';
+        submitBtn.textContent = currentLanguage === 'zh-TW' ? '登入' : 'Login';
     }
 }
 
@@ -4500,7 +4545,7 @@ function sendMessage() {
     // 立即在本地顯示自己的訊息
     const currentUserId = game.getCurrentUserId();
     game.displayChatMessage({
-        userId: currentUserId.startsWith('匿名玩家_') ? currentUserId : '玩家 ' + currentUserId.slice(-6),
+        userId: currentUserId.startsWith('匿名玩家_') || currentUserId.startsWith('Anonymous_') ? currentUserId : \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${currentUserId.slice(-6)}\`,
         message: message
     });
     
@@ -4615,7 +4660,7 @@ document.addEventListener('DOMContentLoaded', function() {
         authForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            const isLogin = document.getElementById('auth-title').textContent === '登入';
+            const isLogin = document.getElementById('auth-title').textContent === (currentLanguage === 'zh-TW' ? '登入' : 'Login');
             const username = document.getElementById('username').value;
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
@@ -4636,7 +4681,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     localStorage.setItem('username', data.user.username);
                     localStorage.setItem('authToken', data.token);
                     hideLoginModal();
-                    alert(\`\${isLogin ? '登入' : '註冊'}成功！\`);
+                    alert(\`\${isLogin ? (currentLanguage === 'zh-TW' ? '登入' : 'Login') : (currentLanguage === 'zh-TW' ? '註冊' : 'Register')}成功！\`);
                     
                     // 重新載入用戶問候語和更新個人資料卡片
                     setTimeout(() => {
@@ -4648,11 +4693,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }, 100);
                 } else {
-                    alert(data.error || \`\${isLogin ? '登入' : '註冊'}失敗\`);
+                    alert(data.error || \`\${isLogin ? (currentLanguage === 'zh-TW' ? '登入' : 'Login') : (currentLanguage === 'zh-TW' ? '註冊' : 'Register')}失敗\`);
                 }
             } catch (error) {
-                console.error(\`\${isLogin ? '登入' : '註冊'}失敗:\`, error);
-                alert(\`\${isLogin ? '登入' : '註冊'}失敗\`);
+                console.error(\`\${isLogin ? (currentLanguage === 'zh-TW' ? '登入' : 'Login') : (currentLanguage === 'zh-TW' ? '註冊' : 'Register')}失敗:\`, error);
+                alert(\`\${isLogin ? (currentLanguage === 'zh-TW' ? '登入' : 'Login') : (currentLanguage === 'zh-TW' ? '註冊' : 'Register')}失敗\`);
             }
         });
     }
@@ -4703,21 +4748,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 const data = await response.json();
                 if (response.ok) {
-                    alert('密碼更改成功！');
+                    alert(currentLanguage === 'zh-TW' ? '密碼更改成功！' : 'Password changed successfully!');
                     hideChangePasswordModal();
                 } else {
-                    alert(data.error || '密碼更改失敗');
+                    alert(data.error || (currentLanguage === 'zh-TW' ? '密碼更改失敗' : 'Failed to change password'));
                 }
             } catch (error) {
                 console.error('更改密碼失敗:', error);
-                alert('更改密碼失敗');
+                alert(currentLanguage === 'zh-TW' ? '更改密碼失敗' : 'Failed to change password');
             }
         });
     }
     
     // 登出功能
     window.logout = function() {
-        if (confirm('確定要登出嗎？')) {
+        if (confirm(currentLanguage === 'zh-TW' ? '確定要登出嗎？' : 'Are you sure you want to logout?')) {
             localStorage.removeItem('userId');
             localStorage.removeItem('username');
             localStorage.removeItem('authToken');
