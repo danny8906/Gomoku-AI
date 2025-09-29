@@ -80,7 +80,7 @@
 
 1. **克隆專案**
    ```bash
-   git clone [<repository-url>](https://github.com/danny8906/Gomoku-AI.git)
+   git clone https://github.com/danny8906/Gomoku-AI.git
    cd gomoku-cf
    ```
 
