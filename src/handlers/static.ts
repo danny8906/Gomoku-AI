@@ -251,6 +251,20 @@ function getGameHTML(): string {
                         <div id="moves-list"></div>
                     </div>
                     
+                    <div class="ai-status" id="ai-status">
+                        <h4>🤖 AI 狀態</h4>
+                        <div id="ai-status-content">
+                            <div class="status-item">
+                                <span class="status-label">狀態：</span>
+                                <span id="ai-current-status">等待中</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-label">上一步用時：</span>
+                                <span id="ai-thinking-time">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="ai-analysis" id="ai-analysis" style="display: none;">
                         <h4>AI 分析</h4>
                         <div id="analysis-content"></div>
@@ -1459,7 +1473,7 @@ body.modal-open {
     box-shadow: 0 0 0 3px var(--color-shadow-focus), 0 4px 12px rgba(66, 153, 225, 0.2);
 }
 
-.move-history h4, .ai-analysis h4, .suggestions h4, .chat-area h4 {
+.move-history h4, .ai-analysis h4, .suggestions h4, .chat-area h4, .ai-status h4 {
     margin-bottom: 1rem;
     color: #4a5568;
 }
@@ -1467,6 +1481,73 @@ body.modal-open {
 #moves-list {
     max-height: 200px;
     overflow-y: auto;
+}
+
+/* AI 狀態窗格樣式 */
+.ai-status {
+    background: white;
+    border-radius: 12px;
+    padding: 1rem;
+    margin: 1rem 0;
+    color: #4a5568;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
+}
+
+.ai-status h4 {
+    color: #4a5568 !important;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+}
+
+#ai-status-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+}
+
+.status-label {
+    font-weight: 500;
+    color: #718096;
+}
+
+#ai-current-status {
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    min-width: 60px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+#ai-thinking-time {
+    font-weight: 600;
+    color: #2d3748;
+    font-family: 'Courier New', monospace;
+    background: #f7fafc;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+}
+
+/* AI 狀態動畫 */
+.ai-thinking {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
 }
 
 /* 聊天室樣式 */
@@ -2856,6 +2937,12 @@ class GomokuGame {
                     this.lastMove = { row: lastMove.position.row, col: lastMove.position.col };
                 }
                 this.updateGameDisplay();
+                
+                // 如果是AI模式，初始化AI狀態
+                if (mode === 'ai') {
+                    this.updateAIStatus('等待中');
+                    this.updateAIThinkingTime('-');
+                }
             }
         } catch (error) {
             console.error('創建遊戲失敗:', error);
@@ -2876,6 +2963,12 @@ class GomokuGame {
                 }
                 this.updateGameDisplay();
                 this.drawBoard();
+                
+                // 如果是AI模式，初始化AI狀態
+                if (this.gameState.mode === 'ai') {
+                    this.updateAIStatus('等待中');
+                    this.updateAIThinkingTime('-');
+                }
             }
         } catch (error) {
             console.error('載入遊戲失敗:', error);
@@ -2922,6 +3015,9 @@ class GomokuGame {
     
     async requestAIMove() {
         try {
+            // 顯示AI思考狀態
+            this.updateAIStatus('思考中...', true);
+            
             const response = await fetch('/api/game/ai-move', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2943,13 +3039,15 @@ class GomokuGame {
                 this.updateGameDisplay();
                 this.drawBoard();
                 
-                // 顯示 AI 分析
-                if (data.aiMove) {
-                    this.showAIAnalysis(data.aiMove, data.analysis);
+                // 更新AI狀態和思考用時
+                if (data.aiMove && data.aiMove.thinkingTime) {
+                    this.updateAIStatus('已完成', false);
+                    this.updateAIThinkingTime(data.aiMove.thinkingTime);
                 }
             }
         } catch (error) {
             console.error('AI 落子失敗:', error);
+            this.updateAIStatus('錯誤', false);
         }
     }
     
@@ -3305,22 +3403,30 @@ class GomokuGame {
         movesListEl.scrollTop = movesListEl.scrollHeight;
     }
     
-    showAIAnalysis(aiMove, analysis) {
-        const analysisEl = document.getElementById('ai-analysis');
-        const contentEl = document.getElementById('analysis-content');
-        
-        if (analysisEl && contentEl) {
-            analysisEl.style.display = 'block';
-            contentEl.innerHTML = \`
-                <p><strong>AI 落子：</strong>(\${aiMove.position.row}, \${aiMove.position.col})</p>
-                <p><strong>信心度：</strong>\${(aiMove.confidence * 100).toFixed(1)}%</p>
-                <p><strong>理由：</strong>\${aiMove.reasoning}</p>
-                \${analysis ? \`
-                    <hr style="margin: 1rem 0;">
-                    <p><strong>局面評估：</strong>\${analysis.advantage === 'advantage' ? '優勢' : analysis.advantage === 'disadvantage' ? '劣勢' : '平局'}</p>
-                    <p><strong>分析：</strong>\${analysis.reasoning}</p>
-                \` : ''}
-            \`;
+    // 更新AI狀態
+    updateAIStatus(status, isThinking = false) {
+        const statusEl = document.getElementById('ai-current-status');
+        if (statusEl) {
+            statusEl.textContent = status;
+            
+            // 添加或移除思考動畫
+            if (isThinking) {
+                statusEl.classList.add('ai-thinking');
+            } else {
+                statusEl.classList.remove('ai-thinking');
+            }
+        }
+    }
+    
+    // 更新AI思考用時
+    updateAIThinkingTime(timeMs) {
+        const timeEl = document.getElementById('ai-thinking-time');
+        if (timeEl) {
+            if (timeMs < 1000) {
+                timeEl.textContent = \`\${timeMs}ms\`;
+            } else {
+                timeEl.textContent = \`\${(timeMs / 1000).toFixed(1)}s\`;
+            }
         }
     }
     

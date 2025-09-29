@@ -53,8 +53,8 @@ export class VectorizeService {
    */
   async findSimilarGameStates(
     gameState: GameState,
-    limit: number = 10,
-    threshold: number = 0.8
+    limit: number = 5, // 減少搜索數量
+    threshold: number = 0.75 // 降低閾值以獲得更快結果
   ): Promise<GameVector[]> {
     try {
       // 生成當前棋盤的描述和向量
@@ -70,8 +70,8 @@ export class VectorizeService {
 
       // 過濾結果，只返回相似度高於閾值的
       return results.matches
-        .filter(match => match.score >= threshold)
-        .map(match => ({
+        .filter((match: any) => match.score >= threshold)
+        .map((match: any) => ({
           id: match.id,
           values: match.values || [],
           metadata: match.metadata as GameVector['metadata'],
@@ -90,8 +90,8 @@ export class VectorizeService {
     reasoning: string[];
   }> {
     try {
-      // 查找相似局面
-      const similarGames = await this.findSimilarGameStates(gameState, 5, 0.75);
+      // 查找相似局面（減少搜索數量以提高速度）
+      const similarGames = await this.findSimilarGameStates(gameState, 3, 0.7);
 
       if (similarGames.length === 0) {
         return {
@@ -128,7 +128,7 @@ export class VectorizeService {
         .sort((a, b) => b[1].count - a[1].count)
         .slice(0, 3);
 
-      const suggestions = sortedMoves.map(([_, data]) => data.positions[0]);
+      const suggestions = sortedMoves.map(([_, data]) => data.positions[0]).filter((pos): pos is Position => pos !== undefined);
 
       reasoning.push(`基於 ${similarGames.length} 個相似局面的分析`);
       reasoning.push(
@@ -276,49 +276,55 @@ ${boardString}
 
     // 統計棋子數量和中心控制
     for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        const cell = board[row][col];
-        if (cell === 'black') {
-          blackCount++;
-          if (Math.abs(row - center) <= 2 && Math.abs(col - center) <= 2) {
-            centerControl++;
-          }
-        } else if (cell === 'white') {
-          whiteCount++;
-          if (Math.abs(row - center) <= 2 && Math.abs(col - center) <= 2) {
-            centerControl--;
+      const boardRow = board[row];
+      if (boardRow) {
+        for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+          const cell = boardRow[col];
+          if (cell === 'black') {
+            blackCount++;
+            if (Math.abs(row - center) <= 2 && Math.abs(col - center) <= 2) {
+              centerControl++;
+            }
+          } else if (cell === 'white') {
+            whiteCount++;
+            if (Math.abs(row - center) <= 2 && Math.abs(col - center) <= 2) {
+              centerControl--;
+            }
           }
         }
       }
     }
 
     // 找出最長連子
-    const directions = [
+    const directions: [number, number][] = [
       [0, 1],
       [1, 0],
       [1, 1],
       [1, -1],
     ];
     for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        const player = board[row][col];
-        if (player) {
-          for (const [dx, dy] of directions) {
-            let count = 1;
-            let r = row + dx;
-            let c = col + dy;
-            while (
-              r >= 0 &&
-              r < GameLogic.BOARD_SIZE &&
-              c >= 0 &&
-              c < GameLogic.BOARD_SIZE &&
-              board[r][c] === player
-            ) {
-              count++;
-              r += dx;
-              c += dy;
+      const boardRow = board[row];
+      if (boardRow) {
+        for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+          const player = boardRow[col];
+          if (player) {
+            for (const [dx, dy] of directions) {
+              let count = 1;
+              let r = row + dx;
+              let c = col + dy;
+              while (
+                r >= 0 &&
+                r < GameLogic.BOARD_SIZE &&
+                c >= 0 &&
+                c < GameLogic.BOARD_SIZE &&
+                board[r]?.[c] === player
+              ) {
+                count++;
+                r += dx;
+                c += dy;
+              }
+              longestSequence = Math.max(longestSequence, count);
             }
-            longestSequence = Math.max(longestSequence, count);
           }
         }
       }
@@ -330,12 +336,15 @@ ${boardString}
     let minCol = GameLogic.BOARD_SIZE,
       maxCol = -1;
     for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        if (board[row][col]) {
-          minRow = Math.min(minRow, row);
-          maxRow = Math.max(maxRow, row);
-          minCol = Math.min(minCol, col);
-          maxCol = Math.max(maxCol, col);
+      const boardRow = board[row];
+      if (boardRow) {
+        for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+          if (boardRow[col]) {
+            minRow = Math.min(minRow, row);
+            maxRow = Math.max(maxRow, row);
+            minCol = Math.min(minCol, col);
+            maxCol = Math.max(maxCol, col);
+          }
         }
       }
     }
@@ -383,23 +392,32 @@ ${boardString}
       const vector = vectors[i];
       const gameState = gameStates[i];
 
+      // 檢查向量和遊戲狀態是否有效
+      if (!vector || !gameState) continue;
+
       // 找到最相似的聚類
       let bestCluster = -1;
       let bestSimilarity = -1;
 
       for (let j = 0; j < clusters.length; j++) {
-        const similarity = this.cosineSimilarity(vector, clusters[j].centroid);
-        if (similarity > bestSimilarity && similarity > threshold) {
-          bestSimilarity = similarity;
-          bestCluster = j;
+        const cluster = clusters[j];
+        if (cluster?.centroid) {
+          const similarity = this.cosineSimilarity(vector, cluster.centroid);
+          if (similarity > bestSimilarity && similarity > threshold) {
+            bestSimilarity = similarity;
+            bestCluster = j;
+          }
         }
       }
 
       if (bestCluster >= 0) {
         // 加入現有聚類
-        clusters[bestCluster].games.push(gameState);
-        // 更新聚類中心
-        this.updateCentroid(clusters[bestCluster].centroid, vector);
+        const targetCluster = clusters[bestCluster];
+        if (targetCluster && targetCluster.centroid) {
+          targetCluster.games.push(gameState);
+          // 更新聚類中心
+          this.updateCentroid(targetCluster.centroid, vector);
+        }
       } else {
         // 創建新聚類
         clusters.push({
@@ -420,12 +438,16 @@ ${boardString}
     let normA = 0;
     let normB = 0;
 
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+    const minLength = Math.min(a.length, b.length);
+    for (let i = 0; i < minLength; i++) {
+      const aVal = a[i] || 0;
+      const bVal = b[i] || 0;
+      dotProduct += aVal * bVal;
+      normA += aVal * aVal;
+      normB += bVal * bVal;
     }
 
+    if (normA === 0 || normB === 0) return 0;
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
   }
 
@@ -433,8 +455,11 @@ ${boardString}
    * 更新聚類中心
    */
   private updateCentroid(centroid: number[], newVector: number[]): void {
-    for (let i = 0; i < centroid.length; i++) {
-      centroid[i] = (centroid[i] + newVector[i]) / 2;
+    const minLength = Math.min(centroid.length, newVector.length);
+    for (let i = 0; i < minLength; i++) {
+      const centroidVal = centroid[i] || 0;
+      const newVal = newVector[i] || 0;
+      centroid[i] = (centroidVal + newVal) / 2;
     }
   }
 
@@ -443,11 +468,43 @@ ${boardString}
    */
   private simulateNextMovesFromHistory(similar: GameVector): Position[] {
     // 這是一個模擬函數，實際應該從 D1 資料庫查詢完整遊戲記錄
-    const moveCount = similar.metadata.moveCount;
     const suggestions: Position[] = [];
 
-    // 基於棋盤狀態生成一些可能的走法
-    for (let i = 0; i < 3; i++) {
+    // 基於棋盤狀態和相似度生成更智能的建議
+    const boardState = similar.metadata.boardState;
+    
+    if (boardState) {
+      // 解析棋盤狀態，找到空位
+      const emptyPositions: Position[] = [];
+      const lines = boardState.split('\n');
+      
+      for (let row = 0; row < lines.length && row < GameLogic.BOARD_SIZE; row++) {
+        const line = lines[row];
+        if (line) {
+          for (let col = 0; col < line.length && col < GameLogic.BOARD_SIZE; col++) {
+            if (line[col] === '.') {
+              emptyPositions.push({ row, col });
+            }
+          }
+        }
+      }
+
+      // 如果找到空位，選擇其中一些作為建議
+      if (emptyPositions.length > 0) {
+        const numSuggestions = Math.min(3, emptyPositions.length);
+        for (let i = 0; i < numSuggestions; i++) {
+          const randomIndex = Math.floor(Math.random() * emptyPositions.length);
+          const selectedPosition = emptyPositions[randomIndex];
+          if (selectedPosition) {
+            suggestions.push(selectedPosition);
+            emptyPositions.splice(randomIndex, 1); // 避免重複
+          }
+        }
+      }
+    }
+    
+    // 如果沒有找到足夠的建議，生成隨機位置
+    while (suggestions.length < 3) {
       suggestions.push({
         row: Math.floor(Math.random() * GameLogic.BOARD_SIZE),
         col: Math.floor(Math.random() * GameLogic.BOARD_SIZE),

@@ -11,12 +11,15 @@ import {
   GameAnalysis,
 } from '../types';
 import { GameLogic } from '../game/GameLogic';
+import { VectorizeService } from './VectorizeService';
 
 export class AIEngine {
   private env: Env;
+  private vectorizeService: VectorizeService;
 
   constructor(env: Env) {
     this.env = env;
+    this.vectorizeService = new VectorizeService(env);
   }
 
   /**
@@ -53,16 +56,56 @@ export class AIEngine {
     }
 
     try {
-      // 使用 AI 分析當前局面
-      const boardAnalysis = await this.analyzeBoardState(gameState, aiPlayer);
+      let boardAnalysis: string;
+      let historicalSuggestions: { suggestions: Position[]; reasoning: string[] };
+      
+      // 簡單模式使用快速分析，但允許5秒超時
+      if (difficulty === 'easy') {
+        const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
+        const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
+        
+        // 簡單模式設置5秒超時
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('AI 分析超時')), 5000);
+        });
 
-      // 根據分析結果和難度選擇最佳落子
+        [boardAnalysis, historicalSuggestions] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise]),
+          timeoutPromise
+        ]).catch(() => {
+          // 超時時使用快速分析
+          console.warn('簡單模式AI分析超時，使用快速模式');
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }];
+        });
+      } else {
+        // 中等和困難模式使用完整分析，但設置超時
+        const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
+        const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
+        
+        // 根據難度設置超時時間
+        const timeoutMs = difficulty === 'medium' ? 10000 : 20000;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('AI 分析超時')), timeoutMs);
+        });
+
+        [boardAnalysis, historicalSuggestions] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise]),
+          timeoutPromise
+        ]).catch(() => {
+          // 超時時使用快速分析
+          console.warn('AI 分析超時，使用快速模式');
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }];
+        });
+      }
+
+      // 根據分析結果、歷史建議和難度選擇最佳落子
       const bestMove = await this.selectBestMove(
         gameState,
         availableMoves,
         aiPlayer,
         boardAnalysis,
-        difficulty
+        difficulty,
+        historicalSuggestions
       );
 
       return bestMove;
@@ -71,6 +114,137 @@ export class AIEngine {
 
       // 降級到基本策略
       return this.fallbackMove(gameState, availableMoves, aiPlayer);
+    }
+  }
+
+  /**
+   * 快速分析棋盤狀態（無需AI）
+   */
+  private getQuickAnalysis(gameState: GameState, player: Player): string {
+    let totalMoves = 0;
+    
+    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
+      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+        if (gameState.board[row]?.[col] !== null) {
+          totalMoves++;
+        }
+      }
+    }
+
+    const moveHistory = totalMoves > 0 ? `已進行 ${totalMoves} 步` : '遊戲開始';
+    
+    // 快速分析：檢查是否有威脅或機會
+    const hasThreats = this.hasImmediateThreats(gameState.board, player);
+    const hasOpportunities = this.hasImmediateOpportunities(gameState.board, player);
+    
+    let analysis = `當前輪到: ${player === 'black' ? '黑棋' : '白棋'}, ${moveHistory}`;
+    
+    if (hasThreats) {
+      analysis += '。檢測到對手威脅，需要防守';
+    }
+    if (hasOpportunities) {
+      analysis += '。發現進攻機會';
+    }
+    
+    return analysis;
+  }
+
+  /**
+   * 檢查是否有立即威脅
+   */
+  private hasImmediateThreats(board: Player[][], player: Player): boolean {
+    const opponent = GameLogic.getOpponent(player);
+    
+    // 檢查對手是否有4子連線
+    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
+      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+        if (board[row]?.[col] === opponent) {
+          if (this.checkConsecutiveCount(board, row, col, opponent) >= 4) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 檢查是否有立即機會
+   */
+  private hasImmediateOpportunities(board: Player[][], player: Player): boolean {
+    // 檢查自己是否有4子連線
+    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
+      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
+        if (board[row]?.[col] === player) {
+          if (this.checkConsecutiveCount(board, row, col, player) >= 4) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 檢查指定位置的最大連子數
+   */
+  private checkConsecutiveCount(board: Player[][], row: number, col: number, player: Player): number {
+    const directions: [number, number][] = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    let maxCount = 0;
+
+    for (const [dx, dy] of directions) {
+      let count = 1;
+      
+      // 向一個方向檢查
+      let r = row + dx;
+      let c = col + dy;
+      while (r >= 0 && r < GameLogic.BOARD_SIZE && c >= 0 && c < GameLogic.BOARD_SIZE && board[r]?.[c] === player) {
+        count++;
+        r += dx;
+        c += dy;
+      }
+      
+      // 向相反方向檢查
+      r = row - dx;
+      c = col - dy;
+      while (r >= 0 && r < GameLogic.BOARD_SIZE && c >= 0 && c < GameLogic.BOARD_SIZE && board[r]?.[c] === player) {
+        count++;
+        r -= dx;
+        c -= dy;
+      }
+      
+      maxCount = Math.max(maxCount, count);
+    }
+
+    return maxCount;
+  }
+
+  /**
+   * 獲取歷史棋譜建議
+   */
+  private async getHistoricalSuggestions(
+    gameState: GameState,
+    _player: Player
+  ): Promise<{
+    suggestions: Position[];
+    reasoning: string[];
+  }> {
+    try {
+      // 設置5秒超時，如果超時則返回空建議
+      const timeoutPromise = new Promise<{ suggestions: Position[]; reasoning: string[] }>((_, reject) => {
+        setTimeout(() => reject(new Error('歷史建議超時')), 5000);
+      });
+
+      return await Promise.race([
+        this.vectorizeService.getHistoricalMovesSuggestions(gameState),
+        timeoutPromise
+      ]);
+    } catch (error) {
+      console.warn('獲取歷史建議失敗，使用快速模式:', error);
+      return {
+        suggestions: [],
+        reasoning: ['快速模式：無歷史建議'],
+      };
     }
   }
 
@@ -94,39 +268,45 @@ export class AIEngine {
 
     const moveHistory = totalMoves > 0 ? `已進行 ${totalMoves} 步` : '遊戲開始';
 
-    const prompt = `你是一個專業的五子棋 AI。請分析以下棋盤狀態：
+    // 優化提示詞以平衡速度和質量
+    const prompt = `你是專業的五子棋AI。請分析以下棋盤狀態：
 
 棋盤狀態 (B=黑棋, W=白棋, .=空位):
 ${boardString}
 
-最近的落子記錄: ${moveHistory}
-當前輪到: ${player === 'black' ? '黑棋' : '白棋'}
+遊戲信息：
+- 當前輪到: ${player === 'black' ? '黑棋' : '白棋'}
+- 進度: ${moveHistory}
 
-請分析：
-1. 當前局面的優劣勢
-2. 關鍵的威脅和機會
-3. 推薦的策略方向
-4. 需要防守的位置
-5. 可以進攻的位置
+請快速分析：
+1. 當前局面的關鍵威脅
+2. 可用的進攻機會
+3. 推薦的戰略方向
 
-請用繁體中文回答，並保持分析簡潔明確。`;
+請用繁體中文回答，保持分析簡潔明確，不超過150字。`;
 
-    const response = await this.env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
-      messages: [
-        {
-          role: 'system',
-          content: '你是一個專業的五子棋分析師，擅長分析棋局並提供戰略建議。',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      max_tokens: 500,
-      temperature: 0.3,
-    });
+    try {
+      const response = await this.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+        messages: [
+          {
+            role: 'system',
+            content: '你是五子棋專家，快速簡潔分析局面。',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        max_tokens: 200,
+        temperature: 0.2,
+      });
 
-    return response.response || '無法分析當前局面';
+      return response.response || '無法分析當前局面';
+    } catch (error) {
+      console.error('AI分析失敗，使用快速分析:', error);
+      // 如果AI失敗，返回快速分析結果
+      return this.getQuickAnalysis(gameState, player);
+    }
   }
 
   /**
@@ -136,8 +316,12 @@ ${boardString}
     gameState: GameState,
     availableMoves: Position[],
     player: Player,
-    analysis: string,
-    difficulty: 'easy' | 'medium' | 'hard'
+    _analysis: string,
+    difficulty: 'easy' | 'medium' | 'hard',
+    historicalSuggestions?: {
+      suggestions: Position[];
+      reasoning: string[];
+    }
   ): Promise<AIMove> {
     // 過濾掉已佔用的位置
     const validMoves = availableMoves.filter(position =>
@@ -151,7 +335,19 @@ ${boardString}
     // 評估每個可能的位置
     const evaluatedMoves = validMoves.map(position => {
       const score = this.evaluateMove(gameState, position, player);
-      return { position, score };
+      let historicalBonus = 0;
+      
+      // 如果有歷史建議，給予額外分數
+      if (historicalSuggestions && historicalSuggestions.suggestions.length > 0) {
+        const isHistoricalMove = historicalSuggestions.suggestions.some(
+          suggestion => suggestion.row === position.row && suggestion.col === position.col
+        );
+        if (isHistoricalMove) {
+          historicalBonus = 200; // 歷史建議額外加分
+        }
+      }
+      
+      return { position, score: score + historicalBonus };
     });
 
     // 按分數排序
@@ -164,40 +360,33 @@ ${boardString}
       case 'easy':
         // 簡單模式：有 30% 機率選擇次優解
         if (Math.random() < 0.3 && evaluatedMoves.length > 1) {
-          selectedMove = evaluatedMoves[1];
+          selectedMove = evaluatedMoves[1]!;
         } else {
-          selectedMove = evaluatedMoves[0];
+          selectedMove = evaluatedMoves[0]!;
         }
         break;
 
       case 'medium':
         // 中等模式：有 10% 機率選擇次優解
         if (Math.random() < 0.1 && evaluatedMoves.length > 1) {
-          selectedMove = evaluatedMoves[1];
+          selectedMove = evaluatedMoves[1]!;
         } else {
-          selectedMove = evaluatedMoves[0];
+          selectedMove = evaluatedMoves[0]!;
         }
         break;
 
       case 'hard':
       default:
         // 困難模式：總是選擇最優解
-        selectedMove = evaluatedMoves[0];
+        selectedMove = evaluatedMoves[0]!;
         break;
     }
 
-    // 使用 AI 生成落子理由
-    const reasoning = await this.generateMoveReasoning(
-      gameState,
-      selectedMove.position,
-      player,
-      analysis
-    );
-
+    // 直接返回落子結果，不生成理由
     return {
       position: selectedMove.position,
       confidence: Math.min(selectedMove.score / 1000, 1.0),
-      reasoning,
+      reasoning: `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
     };
   }
 
@@ -242,45 +431,6 @@ ${boardString}
     return score;
   }
 
-  /**
-   * 生成落子理由
-   */
-  private async generateMoveReasoning(
-    gameState: GameState,
-    position: Position,
-    player: Player,
-    analysis: string
-  ): Promise<string> {
-    const prompt = `基於以下分析：
-${analysis}
-
-我選擇在 (${position.row}, ${position.col}) 落子。請簡潔說明這步棋的戰略意圖，不超過 50 字。`;
-
-    try {
-      const response = await this.env.AI.run('@cf/meta/llama-4-scout-17b-16e-instruct', {
-        messages: [
-          {
-            role: 'system',
-            content: '你是五子棋專家，請簡潔說明落子理由。',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        max_tokens: 100,
-        temperature: 0.5,
-      });
-
-      return (
-        response.response ||
-        `在 (${position.row}, ${position.col}) 落子以鞏固優勢`
-      );
-    } catch (error) {
-      console.error('生成落子理由時發生錯誤:', error);
-      return `在 (${position.row}, ${position.col}) 落子`;
-    }
-  }
 
   /**
    * 降級策略：當 AI 失敗時使用基本算法
@@ -293,13 +443,16 @@ ${analysis}
     // 檢查是否能獲勝
     for (const position of availableMoves) {
       const testBoard = gameState.board.map(row => [...row]);
-      testBoard[position.row][position.col] = player;
-      if (GameLogic.checkWinner(testBoard, position, player)) {
-        return {
-          position,
-          confidence: 1.0,
-          reasoning: '發現獲勝機會',
-        };
+      const targetRow = testBoard[position.row];
+      if (targetRow) {
+        targetRow[position.col] = player;
+        if (GameLogic.checkWinner(testBoard, position, player)) {
+          return {
+            position,
+            confidence: 1.0,
+            reasoning: '發現獲勝機會',
+          };
+        }
       }
     }
 
@@ -307,13 +460,16 @@ ${analysis}
     const opponent = GameLogic.getOpponent(player);
     for (const position of availableMoves) {
       const testBoard = gameState.board.map(row => [...row]);
-      testBoard[position.row][position.col] = opponent;
-      if (GameLogic.checkWinner(testBoard, position, opponent)) {
-        return {
-          position,
-          confidence: 0.8,
-          reasoning: '防守對手威脅',
-        };
+      const targetRow = testBoard[position.row];
+      if (targetRow) {
+        targetRow[position.col] = opponent;
+        if (GameLogic.checkWinner(testBoard, position, opponent)) {
+          return {
+            position,
+            confidence: 0.8,
+            reasoning: '防守對手威脅',
+          };
+        }
       }
     }
 
@@ -370,7 +526,7 @@ ${boardString}
 
       // 使用 Text Generation 提供詳細分析
       const detailedAnalysis = await this.env.AI.run(
-        '@cf/meta/llama-4-scout-17b-16e-instruct',
+        '@cf/meta/llama-3-8b-instruct',
         {
           messages: [
             {
@@ -393,13 +549,13 @@ ${boardString}
 
       if (
         classificationResult.label === 'POSITIVE' &&
-        classificationResult.score > 0.7
+        classificationResult.score && classificationResult.score > 0.7
       ) {
         advantage = 'advantage';
         confidence = classificationResult.score;
       } else if (
         classificationResult.label === 'NEGATIVE' &&
-        classificationResult.score > 0.7
+        classificationResult.score && classificationResult.score > 0.7
       ) {
         advantage = 'disadvantage';
         confidence = classificationResult.score;
