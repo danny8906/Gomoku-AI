@@ -4210,7 +4210,9 @@ class GomokuGame {
                     const data = await response.json();
                     const greetingEl = document.getElementById('user-greeting');
                     if (greetingEl && data.user) {
-                        greetingEl.textContent = \`您好，\${data.user.username}\`;
+                        greetingEl.textContent = currentLanguage === 'zh-TW' ? 
+                            \`您好，\${data.user.username}\` : 
+                            \`Hello, \${data.user.username}\`;
                     }
                     // 更新個人資料卡片
                     this.updateProfileCard(data.user);
@@ -4495,7 +4497,9 @@ async function loadUserGreetingDirectly() {
                 const data = await response.json();
                 const greetingEl = document.getElementById('user-greeting');
                 if (greetingEl && data.user) {
-                    greetingEl.textContent = \`您好，\${data.user.username}\`;
+                    greetingEl.textContent = currentLanguage === 'zh-TW' ? 
+                        \`您好，\${data.user.username}\` : 
+                        \`Hello, \${data.user.username}\`;
                 }
                 // 更新個人資料卡片
                 updateProfileCardDirectly(data.user);
@@ -4524,10 +4528,10 @@ function updateProfileCardDirectly(user) {
     if (user) {
         // 已登入用戶
         profileDescription.innerHTML = \`
-            <p>歡迎回來，<strong>\${user.username}</strong>！</p>
+            <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${user.username}</strong>！</p>
             <div class="user-stats">
-                <p>評分：<strong>\${user.rating}</strong></p>
-                <p>勝率：<strong>\${user.wins + user.losses + user.draws > 0 ? 
+                <p>\${currentLanguage === 'zh-TW' ? '評分：' : 'Rating:'}<strong>\${user.rating}</strong></p>
+                <p>\${currentLanguage === 'zh-TW' ? '勝率：' : 'Win Rate:'}<strong>\${user.wins + user.losses + user.draws > 0 ? 
                     ((user.wins / (user.wins + user.losses + user.draws)) * 100).toFixed(1) + '%' : '0%'}</strong></p>
             </div>
         \`;
@@ -4951,22 +4955,22 @@ function leaveRoom() {
     if (confirm(currentLanguage === 'zh-TW' ? '確定要離開房間嗎？' : 'Are you sure you want to leave the room?')) {
         if (game && game.websocket) {
             try {
-                console.log('發送離開房間訊息並關閉WebSocket');
+                console.log('發送離開房間訊息');
                 
-                // 發送離開訊息
+                // 先發送離開訊息，讓後端處理
                 game.websocket.send(JSON.stringify({
                     type: 'leave',
                     data: {},
                     timestamp: Date.now()
                 }));
                 
-                // 立即關閉WebSocket連接
-                game.websocket.close(1000, 'User left room');
+                // 短暫延遲後關閉WebSocket，讓後端有時間處理離開訊息
+                setTimeout(() => {
+                    console.log('關閉WebSocket連接');
+                    game.websocket.close(1000, 'User left room');
+                    game.websocket = null;
+                }, 100);
                 
-                // 清除WebSocket引用
-                game.websocket = null;
-                
-                console.log('WebSocket已關閉，離開房間');
             } catch (error) {
                 console.log('Failed to send leave message:', error);
                 // 即使發送失敗，也要關閉WebSocket
@@ -4985,10 +4989,10 @@ function leaveRoom() {
         
         console.log('Leaving room, returning to home page');
         
-        // 短暫延遲後返回首頁，確保WebSocket關閉完成
+        // 延遲後返回首頁，確保WebSocket關閉完成
         setTimeout(() => {
             window.location.href = '/';
-        }, 500);
+        }, 1000);
     }
 }
 

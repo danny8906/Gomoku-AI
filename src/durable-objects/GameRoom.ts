@@ -141,18 +141,31 @@ export class GameRoom {
       }, webSocket);
     }
 
-    // 如果這是重新連線且遊戲狀態存在，嘗試將玩家重新分配到遊戲中
-    if (this.gameState && this.gameState.mode === 'pvp') {
-      const playerSlot = this.findPlayerSlot(userId);
-      if (playerSlot) {
-        console.log(`重新連線玩家 ${userId} 已分配到 ${playerSlot} 位置`);
-        // 更新會話中的玩家信息
-        this.sessions.set(webSocket, { userId, player: playerSlot });
-      } else if (this.gameState.status === 'waiting') {
-        // 如果遊戲還在等待中，嘗試自動分配玩家
-        await this.handlePlayerJoin(webSocket, {});
-      }
-    }
+        // 如果這是重新連線且遊戲狀態存在，嘗試將玩家重新分配到遊戲中
+        if (this.gameState && this.gameState.mode === 'pvp') {
+          const playerSlot = this.findPlayerSlot(userId);
+          if (playerSlot) {
+            console.log(`重新連線玩家 ${userId} 已分配到 ${playerSlot} 位置`);
+            // 更新會話中的玩家信息
+            this.sessions.set(webSocket, { userId, player: playerSlot });
+            
+            // 廣播玩家重新連線
+            this.broadcast({
+              type: 'playerReconnected',
+              data: { 
+                userId: userId,
+                message: 'Player has reconnected to the game.'
+              },
+              timestamp: Date.now(),
+            }, webSocket);
+          } else if (this.gameState.status === 'waiting') {
+            // 如果遊戲還在等待中，嘗試自動分配玩家
+            console.log(`重新連線玩家 ${userId} 在等待狀態，嘗試重新分配`);
+            await this.handlePlayerJoin(webSocket, {});
+          } else {
+            console.log(`重新連線玩家 ${userId} 無法找到對應的遊戲位置，遊戲狀態: ${this.gameState.status}`);
+          }
+        }
 
     // 發送當前遊戲狀態
     if (this.gameState) {
@@ -192,10 +205,20 @@ export class GameRoom {
       if (session) {
         console.log(`玩家 ${session.userId} 的 WebSocket 連接關閉`);
         
-        // 如果是PVP模式且遊戲進行中，啟動玩家離開檢測
-        if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing') {
-          console.log(`觸發玩家離開檢測: ${session.userId}`);
-          await this.handlePlayerDisconnect(session.userId);
+        // 檢查是否已經處理過這個玩家的離開（避免重複觸發）
+        const existingTimer = this.playerLeaveTimers.get(session.userId);
+        if (!existingTimer) {
+          // 如果是PVP模式且遊戲進行中，且用戶主動離開（代碼1000），啟動玩家離開檢測
+          if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing' && event.code === 1000) {
+            console.log(`觸發玩家主動離開檢測: ${session.userId}`);
+            await this.handlePlayerDisconnect(session.userId);
+          } else if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing' && event.code !== 1000) {
+            // 非主動離開（網路斷線等），也啟動檢測
+            console.log(`觸發玩家斷線檢測: ${session.userId}`);
+            await this.handlePlayerDisconnect(session.userId);
+          }
+        } else {
+          console.log(`玩家 ${session.userId} 的離開檢測已經在進行中，跳過重複觸發`);
         }
         
         this.sessions.delete(webSocket);
@@ -500,6 +523,8 @@ export class GameRoom {
     const session = this.sessions.get(webSocket);
     if (!session) return;
 
+    console.log(`Player ${session.userId} is leaving the room`);
+
     // 廣播玩家離開
     this.broadcast(
       {
@@ -510,8 +535,12 @@ export class GameRoom {
       webSocket
     );
 
-    // 如果遊戲進行中，暫停遊戲
-    if (this.gameState && this.gameState.status === 'playing') {
+    // 如果是PVP模式且遊戲進行中，觸發玩家離開檢測
+    if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing') {
+      console.log(`Triggering player disconnect for PVP game: ${session.userId}`);
+      await this.handlePlayerDisconnect(session.userId);
+    } else if (this.gameState && this.gameState.status === 'playing') {
+      // 非PVP模式或非遊戲進行中，直接暫停遊戲
       this.gameState.status = 'waiting';
       await this.saveGameState();
       await this.syncToD1();
