@@ -58,29 +58,32 @@ export class AIEngine {
     try {
       let boardAnalysis: string;
       let historicalSuggestions: { suggestions: Position[]; reasoning: string[] };
+      let gameAdvantage: GameAnalysis | null = null;
       
       // 簡單模式使用快速分析，但允許5秒超時
       if (difficulty === 'easy') {
         const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
         const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
+        const advantagePromise = this.analyzeGameAdvantage(gameState, aiPlayer);
         
         // 簡單模式設置5秒超時
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('AI 分析超時')), 5000);
         });
 
-        [boardAnalysis, historicalSuggestions] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise]),
+        [boardAnalysis, historicalSuggestions, gameAdvantage] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise, advantagePromise]),
           timeoutPromise
         ]).catch(() => {
           // 超時時使用快速分析
           console.warn('簡單模式AI分析超時，使用快速模式');
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }];
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }, null];
         });
       } else {
         // 中等和困難模式使用完整分析，但設置超時
         const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
         const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
+        const advantagePromise = this.analyzeGameAdvantage(gameState, aiPlayer);
         
         // 根據難度設置超時時間
         const timeoutMs = difficulty === 'medium' ? 10000 : 20000;
@@ -88,13 +91,13 @@ export class AIEngine {
           setTimeout(() => reject(new Error('AI 分析超時')), timeoutMs);
         });
 
-        [boardAnalysis, historicalSuggestions] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise]),
+        [boardAnalysis, historicalSuggestions, gameAdvantage] = await Promise.race([
+          Promise.all([analysisPromise, historyPromise, advantagePromise]),
           timeoutPromise
         ]).catch(() => {
           // 超時時使用快速分析
           console.warn('AI 分析超時，使用快速模式');
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }];
+          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }, null];
         });
       }
 
@@ -105,7 +108,8 @@ export class AIEngine {
         aiPlayer,
         boardAnalysis,
         difficulty,
-        historicalSuggestions
+        historicalSuggestions,
+        gameAdvantage
       );
 
       return bestMove;
@@ -286,7 +290,7 @@ ${boardString}
 請用繁體中文回答，保持分析簡潔明確，不超過150字。`;
 
     try {
-      const response = await this.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      const response = await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
         messages: [
           {
             role: 'system',
@@ -316,12 +320,13 @@ ${boardString}
     gameState: GameState,
     availableMoves: Position[],
     player: Player,
-    _analysis: string,
+    analysis: string,
     difficulty: 'easy' | 'medium' | 'hard',
     historicalSuggestions?: {
       suggestions: Position[];
       reasoning: string[];
-    }
+    },
+    gameAdvantage?: GameAnalysis | null
   ): Promise<AIMove> {
     // 過濾掉已佔用的位置
     const validMoves = availableMoves.filter(position =>
@@ -336,6 +341,8 @@ ${boardString}
     const evaluatedMoves = validMoves.map(position => {
       const score = this.evaluateMove(gameState, position, player);
       let historicalBonus = 0;
+      let aiAnalysisBonus = 0;
+      let advantageBonus = 0;
       
       // 如果有歷史建議，給予額外分數
       if (historicalSuggestions && historicalSuggestions.suggestions.length > 0) {
@@ -347,7 +354,53 @@ ${boardString}
         }
       }
       
-      return { position, score: score + historicalBonus };
+      // 根據AI分析結果調整分數
+      if (analysis && analysis.length > 0) {
+        // 如果AI分析提到防守，對防守位置加分
+        if (analysis.includes('防守') || analysis.includes('威脅')) {
+          const isDefensiveMove = this.isDefensiveMove(gameState, position, player);
+          if (isDefensiveMove) {
+            aiAnalysisBonus = 150;
+          }
+        }
+        
+        // 如果AI分析提到進攻，對進攻位置加分
+        if (analysis.includes('進攻') || analysis.includes('機會')) {
+          const isOffensiveMove = this.isOffensiveMove(gameState, position, player);
+          if (isOffensiveMove) {
+            aiAnalysisBonus = 150;
+          }
+        }
+      }
+      
+      // 根據局面優劣勢調整分數
+      if (gameAdvantage) {
+        const isDefensiveMove = this.isDefensiveMove(gameState, position, player);
+        const isOffensiveMove = this.isOffensiveMove(gameState, position, player);
+        
+        switch (gameAdvantage.advantage) {
+          case 'disadvantage':
+            // 劣勢時優先防守，對防守位置大幅加分
+            if (isDefensiveMove) {
+              advantageBonus = 300 * gameAdvantage.confidence;
+            }
+            break;
+          case 'advantage':
+            // 優勢時優先進攻，對進攻位置大幅加分
+            if (isOffensiveMove) {
+              advantageBonus = 300 * gameAdvantage.confidence;
+            }
+            break;
+          case 'draw':
+            // 平局時平衡考慮，給予適度加分
+            if (isDefensiveMove || isOffensiveMove) {
+              advantageBonus = 100 * gameAdvantage.confidence;
+            }
+            break;
+        }
+      }
+      
+      return { position, score: score + historicalBonus + aiAnalysisBonus + advantageBonus };
     });
 
     // 按分數排序
@@ -388,6 +441,36 @@ ${boardString}
       confidence: Math.min(selectedMove.score / 1000, 1.0),
       reasoning: `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
     };
+  }
+
+  /**
+   * 判斷是否為防守性落子
+   */
+  private isDefensiveMove(gameState: GameState, position: Position, player: Player): boolean {
+    const opponent = player === 'black' ? 'white' : 'black';
+    
+    // 模擬在這個位置落子
+    const testBoard = gameState.board.map(row => [...row]);
+    if (testBoard[position.row] && testBoard[position.row]![position.col] === null) {
+      testBoard[position.row]![position.col] = player;
+    }
+    
+    // 檢查是否阻止了對手的連線
+    return this.hasImmediateThreats(testBoard, opponent);
+  }
+
+  /**
+   * 判斷是否為進攻性落子
+   */
+  private isOffensiveMove(gameState: GameState, position: Position, player: Player): boolean {
+    // 模擬在這個位置落子
+    const testBoard = gameState.board.map(row => [...row]);
+    if (testBoard[position.row] && testBoard[position.row]![position.col] === null) {
+      testBoard[position.row]![position.col] = player;
+    }
+    
+    // 檢查是否創造了進攻機會
+    return this.hasImmediateOpportunities(testBoard, player);
   }
 
   /**
@@ -524,24 +607,6 @@ ${boardString}
         }
       );
 
-      // 使用 Text Generation 提供詳細分析
-      const detailedAnalysis = await this.env.AI.run(
-        '@cf/meta/llama-3-8b-instruct',
-        {
-          messages: [
-            {
-              role: 'system',
-              content: '你是五子棋專家，請分析局面並判斷優劣勢。',
-            },
-            {
-              role: 'user',
-              content: `${analysisText}\n\n請判斷當前局面對${player === 'black' ? '黑棋' : '白棋'}是優勢、劣勢還是平局，並簡述理由。`,
-            },
-          ],
-          max_tokens: 200,
-          temperature: 0.3,
-        }
-      );
 
       // 根據分類結果和詳細分析確定優劣勢
       let advantage: 'advantage' | 'disadvantage' | 'draw' = 'draw';
@@ -564,7 +629,7 @@ ${boardString}
       return {
         advantage,
         confidence,
-        reasoning: detailedAnalysis.response || '局面分析中...',
+        reasoning: `局面分析：${advantage === 'advantage' ? '優勢' : advantage === 'disadvantage' ? '劣勢' : '平局'} (信心度: ${(confidence * 100).toFixed(1)}%)`,
       };
     } catch (error) {
       console.error('分析局面優劣勢時發生錯誤:', error);
