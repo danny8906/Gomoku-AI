@@ -51,5 +51,6 @@ enabled = true
 head_sampling_rate = 1 # optional. default = 1.
 
 # Cron Jobs - 定期清理任務
+# 每小時執行一次 (0 * * * *)
 [triggers]
 crons = ["0 * * * *"]

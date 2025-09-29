@@ -6,6 +6,7 @@ import { Env } from '../types';
 import { corsHeaders } from '../utils/cors';
 import { RoomService } from '../database/RoomService';
 import { verifyAdminPassword, setAdminPassword } from '../utils/auth';
+import { handleStartAITraining, handleGetTrainingStats } from './aiTraining';
 
 export async function handleAdminAPI(
   request: Request,
@@ -70,6 +71,12 @@ export async function handleAdminAPI(
       }
       if (path === '/password/set') {
         return handleSetPassword(request, env);
+      }
+      if (path === '/ai/training/start') {
+        return handleStartAITraining(request, env);
+      }
+      if (path === '/ai/training/stats') {
+        return handleGetTrainingStats(request, env);
       }
       if (path.startsWith('/rooms/')) {
         const roomCode = path.split('/')[2];
