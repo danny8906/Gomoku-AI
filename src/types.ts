@@ -35,6 +35,7 @@ export interface GameState {
   mode: GameMode;
   moves: Move[];
   winner: Player | 'draw';
+  result?: 'win' | 'loss' | 'draw';
   roomCode?: string;
   players: {
     black?: string;
@@ -108,7 +109,7 @@ export interface GameVector {
 
 // WebSocket 訊息類型
 export interface WebSocketMessage {
-  type: 'move' | 'join' | 'leave' | 'chat' | 'gameState' | 'error' | 'playerDisconnected' | 'playerReconnected' | 'gameEnd';
+  type: 'move' | 'join' | 'leave' | 'chat' | 'gameState' | 'error' | 'playerDisconnected' | 'playerReconnected' | 'gameEnd' | 'drawRequest' | 'drawResponse' | 'drawAccepted' | 'drawRejected';
   data: any;
   timestamp: number;
 }

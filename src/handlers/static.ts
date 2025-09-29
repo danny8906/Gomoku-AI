@@ -356,6 +356,7 @@ function getRoomHTML(t: Translations, language: string): string {
                             <canvas id="game-board" width="600" height="600"></canvas>
                             <div id="game-controls">
                                 <button class="btn secondary" onclick="leaveRoom()">${language === 'zh-TW' ? '離開房間' : 'Leave Room'}</button>
+                                <button class="btn warning" onclick="requestDraw()" id="draw-btn">${language === 'zh-TW' ? '和棋' : 'Draw'}</button>
                                 <button class="btn primary" onclick="restartGame()" style="display: none;">${t.restart}</button>
                             </div>
                         </div>
@@ -1517,6 +1518,67 @@ body {
     background: #c53030;
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
+}
+
+/* 警告按鈕 */
+.btn.warning {
+    background: var(--color-warning);
+    color: var(--color-text-white);
+    box-shadow: var(--shadow-md);
+}
+
+.btn.warning:hover:not(:disabled) {
+    background: #b7791f;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* 和棋確認模態框樣式 */
+.draw-confirm-content {
+    max-width: 400px;
+    text-align: center;
+    animation: slideInDown 0.3s ease-out;
+}
+
+.draw-confirm-header h3 {
+    margin: 0 0 var(--spacing-4) 0;
+    color: var(--color-primary);
+    font-size: var(--font-size-lg);
+}
+
+.draw-confirm-body {
+    margin-bottom: var(--spacing-6);
+}
+
+.draw-confirm-body p {
+    margin: 0;
+    font-size: var(--font-size-md);
+    color: var(--color-text);
+    line-height: 1.5;
+}
+
+.draw-confirm-buttons {
+    display: flex;
+    gap: var(--spacing-3);
+    justify-content: center;
+}
+
+.draw-confirm-buttons .btn {
+    min-width: 100px;
+    padding: var(--spacing-3) var(--spacing-4);
+    font-size: var(--font-size-md);
+}
+
+/* 動畫效果 */
+@keyframes slideInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 /* 按鈕尺寸變體 */
@@ -3523,6 +3585,14 @@ class GomokuGame {
                 this.handleGameEnd(message.data);
                 break;
                 
+            case 'drawRequest':
+                this.handleDrawRequest(message.data);
+                break;
+                
+            case 'drawRejected':
+                this.handleDrawRejected(message.data);
+                break;
+                
             case 'error':
                 console.error('房間錯誤:', message.data.message);
                 break;
@@ -3721,6 +3791,8 @@ class GomokuGame {
     }
     
     handleGameEnd(data) {
+        console.log('收到遊戲結束消息:', data);
+        
         if (data.reason === 'opponentTimeout') {
             this.gameState = data.gameState;
             this.updateGameDisplay();
@@ -3737,6 +3809,105 @@ class GomokuGame {
                     'Opponent timed out, you win!', 
                 'success'
             );
+        } else if (data.result === 'draw') {
+            // 處理和棋情況
+            console.log('遊戲以和棋結束');
+            
+            // 更新遊戲狀態
+            if (this.gameState) {
+                this.gameState.status = 'finished';
+                this.gameState.result = 'draw';
+                this.gameState.winner = 'draw';
+            }
+            
+            // 隱藏和棋確認模態框（如果還開著）
+            this.hideDrawConfirmModal();
+            
+            // 顯示遊戲結束彈窗
+            setTimeout(() => {
+                this.showGameOverModal();
+            }, 1000);
+            
+            showToast(
+                currentLanguage === 'zh-TW' ? 
+                    '遊戲以和棋結束！' : 
+                    'Game ended in a draw!', 
+                'success'
+            );
+        }
+    }
+    
+    handleDrawRequest(data) {
+        console.log('收到和棋請求:', data);
+        
+        // 檢查是否是自己的請求（不應該向自己發送確認）
+        const currentUserId = this.getCurrentUserId();
+        if (data.from === currentUserId) {
+            console.log('這是自己的和棋請求，不顯示確認對話框');
+            return;
+        }
+        
+        // 顯示自定義和棋確認模態框
+        this.showDrawConfirmModal(data.from);
+    }
+    
+    handleDrawRejected(data) {
+        console.log('和棋請求被拒絕:', data);
+        
+        showToast(
+            currentLanguage === 'zh-TW' ? '對方拒絕了和棋請求' : 'Draw request was rejected',
+            'info'
+        );
+    }
+    
+    showDrawConfirmModal(fromUserId) {
+        // 創建和棋確認模態框
+        const modal = document.createElement('div');
+        modal.id = 'draw-confirm-modal';
+        modal.className = 'modal';
+        modal.style.display = 'flex';
+        
+        const playerName = fromUserId.startsWith('Anonymous_') 
+            ? fromUserId 
+            : (currentLanguage === 'zh-TW' ? '玩家' : 'Player') + ' ' + fromUserId.slice(-6);
+        
+        modal.innerHTML = 
+            '<div class="modal-content draw-confirm-content">' +
+                '<div class="draw-confirm-header">' +
+                    '<h3>' + (currentLanguage === 'zh-TW' ? '🤝 和棋請求' : '🤝 Draw Request') + '</h3>' +
+                '</div>' +
+                '<div class="draw-confirm-body">' +
+                    '<p>' + (currentLanguage === 'zh-TW' ? playerName + ' 提議和棋，是否接受？' : playerName + ' requests a draw, do you accept?') + '</p>' +
+                '</div>' +
+                '<div class="draw-confirm-buttons">' +
+                    '<button class="btn primary" onclick="game.acceptDraw()">' +
+                        (currentLanguage === 'zh-TW' ? '✅ 接受' : '✅ Accept') +
+                    '</button>' +
+                    '<button class="btn secondary" onclick="game.rejectDraw()">' +
+                        (currentLanguage === 'zh-TW' ? '❌ 拒絕' : '❌ Reject') +
+                    '</button>' +
+                '</div>' +
+            '</div>';
+        
+        document.body.appendChild(modal);
+        document.body.classList.add('modal-open');
+    }
+    
+    acceptDraw() {
+        this.hideDrawConfirmModal();
+        respondToDraw(true);
+    }
+    
+    rejectDraw() {
+        this.hideDrawConfirmModal();
+        respondToDraw(false);
+    }
+    
+    hideDrawConfirmModal() {
+        const modal = document.getElementById('draw-confirm-modal');
+        if (modal) {
+            modal.remove();
+            document.body.classList.remove('modal-open');
         }
     }
     
@@ -4420,10 +4591,10 @@ class GomokuGame {
         const seconds = Math.floor((duration % 60000) / 1000);
         
         // 設置彈窗內容
-        if (this.gameState.winner === 'draw') {
-            titleEl.textContent = currentLanguage === 'zh-TW' ? '平局' : 'Draw';
+        if (this.gameState.winner === 'draw' || this.gameState.result === 'draw') {
+            titleEl.textContent = currentLanguage === 'zh-TW' ? '🤝 和棋' : '🤝 Draw';
             iconEl.textContent = '🤝';
-            messageEl.textContent = currentLanguage === 'zh-TW' ? '勢均力敵，不分勝負！' : 'Evenly matched, no winner!';
+            messageEl.textContent = currentLanguage === 'zh-TW' ? '雙方同意和棋，勢均力敵！' : 'Both players agreed to a draw!';
             modal.querySelector('.game-over-content').classList.remove('winner-effect');
         } else {
             const isPlayerWin = (this.gameState.winner === 'black' && this.myPlayer === 'black') || 
@@ -5337,6 +5508,69 @@ function leaveRoom() {
         setTimeout(() => {
             window.location.href = '/';
         }, 1000);
+    }
+}
+
+// 和棋功能
+function requestDraw() {
+    if (!game || !game.websocket) {
+        showToast(
+            currentLanguage === 'zh-TW' ? '連接已斷開' : 'Connection lost', 
+            'error'
+        );
+        return;
+    }
+    
+    if (confirm(currentLanguage === 'zh-TW' ? '確定要提議和棋嗎？' : 'Are you sure you want to request a draw?')) {
+        try {
+            game.websocket.send(JSON.stringify({
+                type: 'drawRequest',
+                data: {},
+                timestamp: Date.now()
+            }));
+            
+            showToast(
+                currentLanguage === 'zh-TW' ? '已發送和棋請求' : 'Draw request sent', 
+                'info'
+            );
+        } catch (error) {
+            console.error('發送和棋請求失敗:', error);
+            showToast(
+                currentLanguage === 'zh-TW' ? '發送失敗，請重試' : 'Failed to send, please try again', 
+                'error'
+            );
+        }
+    }
+}
+
+// 回應和棋請求
+function respondToDraw(accept) {
+    if (!game || !game.websocket) {
+        showToast(
+            currentLanguage === 'zh-TW' ? '連接已斷開' : 'Connection lost', 
+            'error'
+        );
+        return;
+    }
+    
+    try {
+        game.websocket.send(JSON.stringify({
+            type: 'drawResponse',
+            data: { accept },
+            timestamp: Date.now()
+        }));
+        
+        const message = accept 
+            ? (currentLanguage === 'zh-TW' ? '已接受和棋' : 'Draw accepted')
+            : (currentLanguage === 'zh-TW' ? '已拒絕和棋' : 'Draw rejected');
+        
+        showToast(message, accept ? 'success' : 'info');
+    } catch (error) {
+        console.error('回應和棋請求失敗:', error);
+        showToast(
+            currentLanguage === 'zh-TW' ? '回應失敗，請重試' : 'Failed to respond, please try again', 
+            'error'
+        );
     }
 }
 

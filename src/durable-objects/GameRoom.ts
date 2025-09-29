@@ -274,6 +274,14 @@ export class GameRoom {
       case 'chat':
         this.handleChat(webSocket, message.data);
         break;
+
+      case 'drawRequest':
+        await this.handleDrawRequest(webSocket);
+        break;
+
+      case 'drawResponse':
+        await this.handleDrawResponse(webSocket, message.data);
+        break;
     }
   }
 
@@ -650,6 +658,128 @@ export class GameRoom {
       },
       webSocket
     );
+  }
+
+  /**
+   * 處理和棋請求
+   */
+  private async handleDrawRequest(webSocket: WebSocket): Promise<void> {
+    const session = this.sessions.get(webSocket);
+    if (!session || !this.gameState || this.gameState.mode !== 'pvp') {
+      console.log('和棋請求被拒絕：', { 
+        hasSession: !!session, 
+        hasGameState: !!this.gameState, 
+        mode: this.gameState?.mode 
+      });
+      return;
+    }
+
+    console.log(`玩家 ${session.userId} 發起和棋請求，廣播給其他玩家`);
+
+    // 廣播和棋請求給其他玩家
+    this.broadcast(
+      {
+        type: 'drawRequest',
+        data: {
+          from: session.userId,
+          message: '對方提議和棋，是否接受？'
+        },
+        timestamp: Date.now(),
+      },
+      webSocket
+    );
+
+    // 添加系統消息到聊天室
+    this.broadcast(
+      {
+        type: 'chat',
+        data: {
+          userId: 'system',
+          message: `${session.userId} 提議和棋`,
+          isSystem: true
+        },
+        timestamp: Date.now(),
+      }
+    );
+  }
+
+  /**
+   * 處理和棋回應
+   */
+  private async handleDrawResponse(webSocket: WebSocket, data: { accept: boolean }): Promise<void> {
+    const session = this.sessions.get(webSocket);
+    if (!session || !this.gameState || this.gameState.mode !== 'pvp') {
+      console.log('和棋回應被拒絕：', { 
+        hasSession: !!session, 
+        hasGameState: !!this.gameState, 
+        mode: this.gameState?.mode 
+      });
+      return;
+    }
+
+    console.log(`玩家 ${session.userId} 回應和棋請求：`, data.accept ? '接受' : '拒絕');
+
+    if (data.accept) {
+      // 接受和棋，結束遊戲
+      this.gameState.status = 'finished';
+      this.gameState.result = 'draw';
+      this.gameState.winner = 'draw';
+
+      await this.saveGameState();
+      await this.syncToD1();
+      await this.updateRoomStatus('finished');
+      await this.recordGameResult();
+
+      // 廣播遊戲結束
+      this.broadcast(
+        {
+          type: 'gameEnd',
+          data: {
+            result: 'draw',
+            message: '遊戲以和棋結束'
+          },
+          timestamp: Date.now(),
+        }
+      );
+
+      // 添加系統消息到聊天室
+      this.broadcast(
+        {
+          type: 'chat',
+          data: {
+            userId: 'system',
+            message: '雙方同意和棋，遊戲結束',
+            isSystem: true
+          },
+          timestamp: Date.now(),
+        }
+      );
+    } else {
+      // 拒絕和棋
+      this.broadcast(
+        {
+          type: 'drawRejected',
+          data: {
+            message: '對方拒絕了和棋請求'
+          },
+          timestamp: Date.now(),
+        },
+        webSocket
+      );
+
+      // 添加系統消息到聊天室
+      this.broadcast(
+        {
+          type: 'chat',
+          data: {
+            userId: 'system',
+            message: `${session.userId} 拒絕了和棋請求`,
+            isSystem: true
+          },
+          timestamp: Date.now(),
+        }
+      );
+    }
   }
 
   /**
@@ -1432,7 +1562,7 @@ export class GameRoom {
         let result: 'win' | 'loss' | 'draw';
         let ratingChange = 0;
 
-        if (this.gameState.winner === 'draw') {
+        if (this.gameState.winner === 'draw' || this.gameState.result === 'draw') {
           result = 'draw';
           ratingChange = 0;
         } else if (this.gameState.winner === player.playerType) {
