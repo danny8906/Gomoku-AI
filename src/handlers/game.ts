@@ -8,6 +8,7 @@ import { AIEngine } from '../ai/AIEngine';
 import { VectorizeService } from '../ai/VectorizeService';
 import { corsHeaders } from '../utils/cors';
 import { saveAIGameRecord } from './gameRecord';
+import { detectLanguage, getTranslations } from '../utils/i18n';
 
 export async function handleGameAPI(
   request: Request,
@@ -16,24 +17,26 @@ export async function handleGameAPI(
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/game', '');
+  const language = detectLanguage(request);
+  const t = getTranslations(language);
 
   switch (request.method) {
     case 'POST':
       if (path === '/create') {
-        return handleCreateGame(request, env);
+        return handleCreateGame(request, env, t);
       }
       if (path === '/move') {
-        return handleMakeMove(request, env);
+        return handleMakeMove(request, env, t);
       }
       if (path === '/ai-move') {
-        return handleAIMove(request, env);
+        return handleAIMove(request, env, t);
       }
       break;
 
     case 'GET':
       if (path.startsWith('/state/')) {
         const gameId = path.replace('/state/', '');
-        return handleGetGameState(gameId, env);
+        return handleGetGameState(gameId, env, t);
       }
       break;
   }
@@ -47,7 +50,7 @@ export async function handleGameAPI(
 /**
  * 創建新遊戲
  */
-async function handleCreateGame(request: Request, env: Env): Promise<Response> {
+async function handleCreateGame(request: Request, env: Env, t: any): Promise<Response> {
   try {
     const { mode, userId } = (await request.json()) as {
       mode: 'pvp' | 'ai';
@@ -143,7 +146,7 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
 /**
  * 執行落子
  */
-async function handleMakeMove(request: Request, env: Env): Promise<Response> {
+async function handleMakeMove(request: Request, env: Env, t: any): Promise<Response> {
   try {
     const { gameId, position, player } = (await request.json()) as {
       gameId: string;
@@ -161,7 +164,7 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: '遊戲不存在' }), {
+      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
@@ -243,7 +246,7 @@ async function handleMakeMove(request: Request, env: Env): Promise<Response> {
 /**
  * AI 落子
  */
-async function handleAIMove(request: Request, env: Env): Promise<Response> {
+async function handleAIMove(request: Request, env: Env, t: any): Promise<Response> {
   try {
     const { gameId, difficulty } = (await request.json()) as {
       gameId: string;
@@ -260,7 +263,7 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: '遊戲不存在' }), {
+      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',
@@ -366,7 +369,7 @@ async function handleAIMove(request: Request, env: Env): Promise<Response> {
 /**
  * 獲取遊戲狀態
  */
-async function handleGetGameState(gameId: string, env: Env): Promise<Response> {
+async function handleGetGameState(gameId: string, env: Env, t: any): Promise<Response> {
   try {
     const gameData = await env.DB.prepare(
       `
@@ -377,7 +380,7 @@ async function handleGetGameState(gameId: string, env: Env): Promise<Response> {
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: '遊戲不存在' }), {
+      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
         status: 404,
         headers: {
           'Content-Type': 'application/json',

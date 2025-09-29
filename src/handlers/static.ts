@@ -3,43 +3,46 @@
  */
 
 import { Env } from '../types';
+import { detectLanguage, getTranslations, Translations } from '../utils/i18n';
 
 export async function serveStaticAssets(
   request: Request,
-  env: Env
+  _env: Env
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
+  const language = detectLanguage(request);
+  const t = getTranslations(language);
 
   // 根據路徑返回對應的靜態資源
   switch (path) {
     case '/':
-      return new Response(getIndexHTML(), {
+      return new Response(getIndexHTML(t, language), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
 
     case '/game':
-      return new Response(getGameHTML(), {
+      return new Response(getGameHTML(t, language), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
 
     case '/room':
-      return new Response(getRoomHTML(), {
+      return new Response(getRoomHTML(t, language), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
 
     case '/profile':
-      return new Response(getProfileHTML(), {
+      return new Response(getProfileHTML(t, language), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
 
     case '/leaderboard':
-      return new Response(getLeaderboardHTML(), {
+      return new Response(getLeaderboardHTML(t, language), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
 
     case '/app.js':
-      return new Response(getAppJS(), {
+      return new Response(getAppJS(t, language), {
         headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
       });
 
@@ -56,19 +59,19 @@ export async function serveStaticAssets(
   }
 }
 
-function getIndexHTML(): string {
+function getIndexHTML(t: Translations, language: string): string {
   return `<!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="${language}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>OmniAI 五子棋 - Cloudflare Workers AI</title>
+    <title>OmniAI ${t.gameTitle} - Cloudflare Workers AI</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div id="app">
         <header class="header">
-            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
+            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI ${t.gameTitle}</h1>
             <div class="header-right">
                 <p id="user-greeting">載入中...</p>
                 <button class="btn danger header-logout-btn" onclick="logout()" style="display: none;">登出</button>
@@ -77,34 +80,34 @@ function getIndexHTML(): string {
         
         <main class="main">
             <div class="welcome-section">
-                <h2>歡迎來到五子棋世界</h2>
-                <p>體驗由 Cloudflare Workers AI 驅動的智能對戰</p>
+                <h2>${language === 'zh-TW' ? '歡迎來到五子棋世界' : 'Welcome to Gomoku World'}</h2>
+                <p>${language === 'zh-TW' ? '體驗由 Cloudflare Workers AI 驅動的智能對戰' : 'Experience intelligent gameplay powered by Cloudflare Workers AI'}</p>
                 
                 <div class="feature-grid">
                     <div class="feature-card">
-                        <h3>🤖 AI 對戰</h3>
-                        <p>與智能 AI 對戰，提升棋藝</p>
+                        <h3>🤖 ${t.aiGame}</h3>
+                        <p>${language === 'zh-TW' ? '與智能 AI 對戰，提升棋藝' : 'Battle against intelligent AI and improve your skills'}</p>
                         <div class="ai-difficulty-home">
-                            <label for="home-ai-difficulty">選擇難度：</label>
+                            <label for="home-ai-difficulty">${language === 'zh-TW' ? '選擇難度：' : 'Select Difficulty:'}</label>
                             <select id="home-ai-difficulty">
-                                <option value="easy">簡單</option>
-                                <option value="medium" selected>中等</option>
-                                <option value="hard">困難</option>
+                                <option value="easy">${t.easy}</option>
+                                <option value="medium" selected>${t.medium}</option>
+                                <option value="hard">${t.hard}</option>
                             </select>
                         </div>
-                        <button class="btn primary" onclick="startAIGame()">開始 AI 對戰</button>
+                        <button class="btn primary" onclick="startAIGame()">${language === 'zh-TW' ? '開始 AI 對戰' : 'Start AI Game'}</button>
                     </div>
                     
                     <div class="feature-card">
-                        <h3>👥 玩家對戰</h3>
-                        <p>與朋友即時對戰</p>
-                        <button class="btn primary" onclick="showRoomOptions()">玩家對戰</button>
+                        <h3>👥 ${t.pvpGame}</h3>
+                        <p>${language === 'zh-TW' ? '與朋友即時對戰' : 'Real-time battle with friends'}</p>
+                        <button class="btn primary" onclick="showRoomOptions()">${t.pvpGame}</button>
                     </div>
                     
                     <div class="feature-card">
-                        <h3>📊 排行榜</h3>
-                        <p>查看全球排名</p>
-                        <button class="btn secondary" onclick="window.location.href='/leaderboard'">查看排行榜</button>
+                        <h3>📊 ${language === 'zh-TW' ? '排行榜' : 'Leaderboard'}</h3>
+                        <p>${language === 'zh-TW' ? '查看全球排名' : 'View global rankings'}</p>
+                        <button class="btn secondary" onclick="window.location.href='/leaderboard'">${language === 'zh-TW' ? '查看排行榜' : 'View Leaderboard'}</button>
                     </div>
                     
                     <div class="feature-card" id="profile-card">
@@ -192,23 +195,23 @@ function getIndexHTML(): string {
 </html>`;
 }
 
-function getGameHTML(): string {
+function getGameHTML(t: Translations, language: string): string {
   return `<!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="${language}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>遊戲中 - OmniAI 五子棋</title>
+    <title>${language === 'zh-TW' ? '遊戲中' : 'Playing'} - OmniAI ${t.gameTitle}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body></body>
     <div id="app">
         <header class="header">
-            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI 五子棋</h1>
+            <h1><img src="/logo.png" width="32" height="32" style="vertical-align: middle; margin-right: 8px;"> OmniAI ${t.gameTitle}</h1>
             <div class="game-info">
-                <span id="game-mode">AI 對戰</span>
-                <span id="current-player">黑棋回合</span>
-                <span id="game-status">遊戲進行中</span>
+                <span id="game-mode">${t.aiGame}</span>
+                <span id="current-player">${language === 'zh-TW' ? '黑棋回合' : 'Black Turn'}</span>
+                <span id="game-status">${language === 'zh-TW' ? '遊戲進行中' : 'Game in Progress'}</span>
             </div>
         </header>
         
@@ -217,16 +220,16 @@ function getGameHTML(): string {
                 <div class="game-board-container">
                     <canvas id="game-board" width="600" height="600"></canvas>
                     <div id="game-controls">
-                        <button class="btn secondary" onclick="window.location.href='/'">返回首頁</button>
-                        <button class="btn primary" onclick="restartGame()">重新開始</button>
+                        <button class="btn secondary" onclick="window.location.href='/'">${language === 'zh-TW' ? '返回首頁' : 'Back to Home'}</button>
+                        <button class="btn primary" onclick="restartGame()">${t.restart}</button>
                         
                         <!-- AI 難度選擇器 -->
                         <div class="difficulty-selector" id="difficulty-selector" style="display: none;">
-                            <label for="ai-difficulty">AI 難度：</label>
+                            <label for="ai-difficulty">${language === 'zh-TW' ? 'AI 難度：' : 'AI Difficulty:'}</label>
                             <select id="ai-difficulty" onchange="changeDifficulty()">
-                                <option value="easy">簡單 (30% 次優解)</option>
-                                <option value="medium" selected>中等 (10% 次優解)</option>
-                                <option value="hard">困難 (總是最優解)</option>
+                                <option value="easy">${t.easy} ${language === 'zh-TW' ? '(30% 次優解)' : '(30% suboptimal)'}</option>
+                                <option value="medium" selected>${t.medium} ${language === 'zh-TW' ? '(10% 次優解)' : '(10% suboptimal)'}</option>
+                                <option value="hard">${t.hard} ${language === 'zh-TW' ? '(總是最優解)' : '(always optimal)'}</option>
                             </select>
                         </div>
                     </div>
@@ -302,13 +305,13 @@ function getGameHTML(): string {
 </html>`;
 }
 
-function getRoomHTML(): string {
+function getRoomHTML(t: Translations, language: string): string {
   return `<!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="${language}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>房間 - OmniAI 五子棋</title>
+    <title>${language === 'zh-TW' ? '房間' : 'Room'} - OmniAI ${t.gameTitle}</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -422,7 +425,7 @@ function getRoomHTML(): string {
 </html>`;
 }
 
-function getProfileHTML(): string {
+function getProfileHTML(_t: Translations, _language: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -492,7 +495,7 @@ function getProfileHTML(): string {
 </html>`;
 }
 
-function getLeaderboardHTML(): string {
+function getLeaderboardHTML(_t: Translations, _language: string): string {
   return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -2611,8 +2614,35 @@ body.modal-open {
 }`;
 }
 
-function getAppJS(): string {
+function getAppJS(t: Translations, language: string): string {
   return `// OmniAI 五子棋 JavaScript
+
+// 多語言支持
+const currentLanguage = '${language}';
+const translations = ${JSON.stringify(t)};
+
+function t(key) {
+    return translations[key] || key;
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = \`toast toast-\${type}\`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 100);
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 300);
+    }, 3000);
+}
 
 class GomokuGame {
     constructor() {
@@ -4230,7 +4260,7 @@ function copyRoomUrl() {
             }, 2000);
             
             // 顯示成功提示
-            showToast('房間網址已複製到剪貼板！', 'success');
+            showToast(t('copied'), 'success');
             
         } catch (err) {
             console.error('複製失敗:', err);
@@ -4249,10 +4279,10 @@ function copyRoomUrl() {
                         copyBtn.innerHTML = '<span id="copy-icon">📋</span> 複製網址';
                     }, 2000);
                     
-                    showToast('房間網址已複製到剪貼板！', 'success');
+                    showToast(t('copied'), 'success');
                 }).catch((clipboardErr) => {
                     console.error('Clipboard API 複製失敗:', clipboardErr);
-                    showToast('複製失敗，請手動複製網址', 'error');
+                    showToast(t('copyFailed'), 'error');
                 });
             } else {
                 showToast('複製失敗，請手動複製網址', 'error');
@@ -4717,44 +4747,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });`;
 }
 
-function getUtilsJS(): string {
-  return `// 工具函數
-
-// CORS 標頭
-export const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Max-Age': '86400'
-};
-
-// 生成隨機 ID
-export function generateId(): string {
-    return crypto.randomUUID();
-}
-
-// 格式化時間
-export function formatTime(timestamp: number): string {
-    return new Date(timestamp).toLocaleString('zh-TW');
-}
-
-// 計算遊戲時長
-export function calculateDuration(startTime: number, endTime: number): number {
-    return endTime - startTime;
-}
-
-// 驗證房間代碼
-export function isValidRoomCode(code: string): boolean {
-    return /^[A-Z0-9]{4}$/.test(code);
-}
-
-// 驗證用戶名
-export function isValidUsername(username: string): boolean {
-    return username.length >= 3 && username.length <= 20 && /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/.test(username);
-}
-
-// 驗證電子郵件
-export function isValidEmail(email: string): boolean {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}`;
-}
