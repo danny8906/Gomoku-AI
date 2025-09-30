@@ -13,7 +13,17 @@ export async function saveAIGameRecord(
 ): Promise<void> {
   try {
     const playerId = gameState.players.black; // AI 模式下玩家總是黑棋
-    if (!playerId) return;
+    console.log('saveAIGameRecord 被調用:', {
+      gameId: gameState.id,
+      playerId,
+      winner: gameState.winner,
+      status: gameState.status
+    });
+    
+    if (!playerId) {
+      console.log('沒有玩家 ID，跳過保存');
+      return;
+    }
 
     console.log('保存 AI 對戰記錄:', gameState.id);
 
@@ -31,6 +41,12 @@ export async function saveAIGameRecord(
     } else {
       result = 'loss'; // AI (白棋) 獲勝
     }
+    
+    console.log('遊戲結果判斷:', {
+      winner: gameState.winner,
+      result,
+      playerId
+    });
 
     // 獲取玩家當前評分
     const userResult = await env.DB.prepare(
@@ -50,6 +66,12 @@ export async function saveAIGameRecord(
     } else if (result === 'loss') {
       ratingChange = -10; // 敗給 AI 扣除評分
     }
+    
+    console.log('評分變化計算:', {
+      result,
+      ratingChange,
+      currentRating
+    });
 
     // 保存遊戲記錄
     await env.DB.prepare(
@@ -81,19 +103,45 @@ export async function saveAIGameRecord(
         ? `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
         : result === 'loss'
           ? `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
-          : `UPDATE users SET draws = draws + 1, updated_at = ?2 WHERE id = ?3`;
+          : `UPDATE users SET draws = draws + 1, updated_at = ?1 WHERE id = ?2`;
+
+    console.log('準備更新用戶統計:', {
+      result,
+      updateQuery,
+      ratingChange
+    });
 
     if (result === 'draw') {
       await env.DB.prepare(updateQuery).bind(Date.now(), playerId).run();
+      console.log('平局統計已更新');
     } else {
       await env.DB.prepare(updateQuery)
         .bind(ratingChange, Date.now(), playerId)
         .run();
+      console.log(`${result === 'win' ? '勝利' : '失敗'}統計已更新，評分變化: ${ratingChange}`);
     }
 
     console.log(
       `AI 對戰記錄已保存: 玩家 ${playerId}, 結果 ${result}, 評分變化 ${ratingChange}`
     );
+    
+    // 驗證記錄是否真的被保存
+    const savedRecord = await env.DB.prepare(
+      `SELECT * FROM game_records WHERE game_id = ?1`
+    )
+      .bind(gameState.id)
+      .first();
+    
+    console.log('驗證保存的記錄:', savedRecord);
+    
+    // 驗證用戶統計是否被更新
+    const updatedUser = await env.DB.prepare(
+      `SELECT wins, losses, draws, rating FROM users WHERE id = ?1`
+    )
+      .bind(playerId)
+      .first();
+    
+    console.log('更新後的用戶統計:', updatedUser);
   } catch (error) {
     console.error('保存 AI 對戰記錄失敗:', error);
   }
@@ -104,9 +152,7 @@ export async function saveAIGameRecord(
  */
 async function ensureUserExists(userId: string, env: Env): Promise<void> {
   const userExists = await env.DB.prepare(
-    `
-    SELECT id FROM users WHERE id = ?1
-  `
+    `SELECT id FROM users WHERE id = ?1`
   )
     .bind(userId)
     .first();

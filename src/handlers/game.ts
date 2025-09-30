@@ -213,8 +213,18 @@ async function handleMakeMove(request: Request, env: Env, t: any): Promise<Respo
       )
       .run();
 
-    // 如果遊戲結束，儲存到 Vectorize
+    // 如果遊戲結束，儲存到 Vectorize 和 AI 對戰記錄
     if (newGameState.status === 'finished') {
+      // 如果是 AI 模式，保存 AI 對戰記錄
+      if (newGameState.mode === 'ai') {
+        console.log('玩家落子導致遊戲結束，準備保存 AI 對戰記錄:', {
+          gameId: newGameState.id,
+          winner: newGameState.winner,
+          playerId: newGameState.players.black
+        });
+        await saveAIGameRecord(newGameState, env);
+      }
+      
       const vectorizeService = new VectorizeService(env);
       await vectorizeService.storeGameState(newGameState);
     }
@@ -323,6 +333,11 @@ async function handleAIMove(request: Request, env: Env, t: any): Promise<Respons
 
     // 如果遊戲結束，保存遊戲記錄
     if (newGameState.status === 'finished') {
+      console.log('遊戲結束，準備保存 AI 對戰記錄:', {
+        gameId: newGameState.id,
+        winner: newGameState.winner,
+        playerId: newGameState.players.black
+      });
       await saveAIGameRecord(newGameState, env);
     }
 

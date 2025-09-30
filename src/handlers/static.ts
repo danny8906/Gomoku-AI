@@ -4708,6 +4708,9 @@ class GomokuGame {
         if (!userId) {
             userId = 'user_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('userId', userId);
+            console.log('生成新的用戶 ID:', userId);
+        } else {
+            console.log('使用現有的用戶 ID:', userId);
         }
         return userId;
     }

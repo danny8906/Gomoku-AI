@@ -94,7 +94,17 @@ export class GameLogic {
 
     // 檢查是否獲勝
     const winner = this.checkWinner(newBoard, position, player);
-    const isDraw = !winner && this.isBoardFull(newBoard);
+    const isBoardFull = this.isBoardFull(newBoard);
+    const shouldDraw = this.shouldDeclareDraw([...gameState.moves, move]);
+    const isDraw = !winner && (isBoardFull || shouldDraw);
+    
+    console.log('遊戲結束檢查:', {
+      winner,
+      isBoardFull,
+      shouldDraw,
+      isDraw,
+      moveCount: gameState.moves.length + 1
+    });
 
     // 更新遊戲狀態
     const newGameState: GameState = {
@@ -132,8 +142,8 @@ export class GameLogic {
       let count = 1; // 包含當前落子
 
       // 向正方向檢查
-      let row = lastMove.row + dx;
-      let col = lastMove.col + dy;
+      let row = lastMove.row + (dx || 0);
+      let col = lastMove.col + (dy || 0);
       while (
         row >= 0 &&
         row < this.BOARD_SIZE &&
@@ -142,13 +152,13 @@ export class GameLogic {
         board[row]?.[col] === player
       ) {
         count++;
-        row += dx;
-        col += dy;
+        row += (dx || 0);
+        col += (dy || 0);
       }
 
       // 向反方向檢查
-      row = lastMove.row - dx;
-      col = lastMove.col - dy;
+      row = lastMove.row - (dx || 0);
+      col = lastMove.col - (dy || 0);
       while (
         row >= 0 &&
         row < this.BOARD_SIZE &&
@@ -157,8 +167,8 @@ export class GameLogic {
         board[row]?.[col] === player
       ) {
         count++;
-        row -= dx;
-        col -= dy;
+        row -= (dx || 0);
+        col -= (dy || 0);
       }
 
       if (count >= this.WIN_LENGTH) {
@@ -181,6 +191,14 @@ export class GameLogic {
       }
     }
     return true;
+  }
+
+  /**
+   * 檢查是否應該判定為平局（基於移動次數）
+   */
+  static shouldDeclareDraw(moves: Move[]): boolean {
+    // 如果移動次數超過 200 步，判定為平局
+    return moves.length >= 200;
   }
 
   /**
@@ -284,7 +302,7 @@ export class GameLogic {
 
     for (const [dx, dy] of directions) {
       // 檢查該方向的連子情況
-      const line = this.getLine(board, position, dx, dy, player);
+      const line = this.getLine(board, position, dx || 0, dy || 0, player);
       score += this.evaluateLine(line);
     }
 
