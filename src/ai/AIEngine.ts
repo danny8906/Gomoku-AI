@@ -435,37 +435,8 @@ ${boardString}
     position: Position,
     player: Player
   ): number {
-    let score = 0;
-
-    // 基本位置評估
-    score += GameLogic.evaluatePosition(gameState.board, position, player);
-
-    // 防守評估 - 檢查是否需要阻止對手獲勝
-    const opponent = GameLogic.getOpponent(player);
-    const defensiveScore = GameLogic.evaluatePosition(
-      gameState.board,
-      position,
-      opponent
-    );
-    score += defensiveScore * 1.1; // 防守稍微重要一些
-
-    // 檢查是否能直接獲勝
-    const testBoard = gameState.board.map(row => [...row]);
-    const targetRow = testBoard[position.row];
-    if (targetRow) {
-      targetRow[position.col] = player;
-      if (GameLogic.checkWinner(testBoard, position, player)) {
-        score += 100000; // 獲勝的位置最高優先級
-      }
-
-      // 檢查是否能阻止對手獲勝
-      targetRow[position.col] = opponent;
-      if (GameLogic.checkWinner(testBoard, position, opponent)) {
-        score += 50000; // 阻止對手獲勝也很重要
-      }
-    }
-
-    return score;
+    // 實作在 GameLogic，讓正式對局與自我訓練共用同一套評估
+    return GameLogic.evaluateMove(gameState.board, position, player);
   }
 
 

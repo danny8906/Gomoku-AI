@@ -302,6 +302,76 @@ export class GameLogic {
   }
 
   /**
+   * 評估在某點落子的整體價值
+   *
+   * 這是引擎唯一的著手評估依據：正式對局與自我訓練都必須走這裡，
+   * 否則訓練出來的棋譜對應的是另一套策略，學到的東西用不上。
+   */
+  static evaluateMove(
+    board: Player[][],
+    position: Position,
+    player: Player
+  ): number {
+    let score = 0;
+
+    // 基本位置評估
+    score += this.evaluatePosition(board, position, player);
+
+    // 防守評估 - 檢查是否需要阻止對手獲勝
+    const opponent = this.getOpponent(player);
+    score += this.evaluatePosition(board, position, opponent) * 1.1;
+
+    const testBoard = board.map(row => [...row]);
+    const targetRow = testBoard[position.row];
+
+    if (targetRow) {
+      // 能直接獲勝
+      targetRow[position.col] = player;
+      if (this.checkWinner(testBoard, position, player)) {
+        score += 100000;
+      }
+
+      // 能阻止對手獲勝
+      targetRow[position.col] = opponent;
+      if (this.checkWinner(testBoard, position, opponent)) {
+        score += 50000;
+      }
+    }
+
+    return score;
+  }
+
+  /**
+   * 以 evaluateMove 挑出最佳著手
+   *
+   * noise 為 0 時完全確定；自我對戰需要棋局多樣性才有學習價值，
+   * 可給予少量擾動在同一套策略附近探索。
+   */
+  static selectBestMove(
+    board: Player[][],
+    player: Player,
+    noise: number = 0
+  ): Position | null {
+    const candidates = this.getRelevantMoves(board);
+
+    let best: Position | null = null;
+    let bestScore = -Infinity;
+
+    for (const position of candidates) {
+      const score =
+        this.evaluateMove(board, position, player) +
+        (noise > 0 ? Math.random() * noise : 0);
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = position;
+      }
+    }
+
+    return best;
+  }
+
+  /**
    * 獲取指定方向的連線
    */
   private static getLine(

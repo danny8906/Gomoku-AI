@@ -5,7 +5,7 @@
 
 import { Env, Position, Player } from '../types';
 import { GameLogic } from '../game/GameLogic';
-import { VectorizeService } from './VectorizeService';
+import { PatternService } from '../database/PatternService';
 
 export interface TrainingGame {
   id: string;
@@ -22,8 +22,13 @@ export interface TrainingGame {
   trainingValue: number; // 0-1, 表示這局遊戲的學習價值
 }
 
-/** 自我訓練的背景執行時間上限 */
-const TRAINING_TIME_BUDGET_MS = 25 * 1000;
+/**
+ * 自我訓練的背景執行時間上限
+ *
+ * 自我對戰現在完全是 CPU 運算（不再有等待模型回應的 I/O），
+ * 因此這段時間會實打實地計入 Worker 的 CPU 限制，預算必須留足餘裕。
+ */
+const TRAINING_TIME_BUDGET_MS = 12 * 1000;
 
 export interface TrainingSession {
   id: string;
@@ -37,11 +42,11 @@ export interface TrainingSession {
 
 export class SelfTrainingService {
   private env: Env;
-  private vectorizeService: VectorizeService;
+  private patternService: PatternService;
 
   constructor(env: Env) {
     this.env = env;
-    this.vectorizeService = new VectorizeService(env);
+    this.patternService = new PatternService(env);
   }
 
   /**
@@ -137,10 +142,15 @@ export class SelfTrainingService {
     let moveCount = 0;
     const maxMoves = 100; // 防止無限循環
 
+    // 難度只調整探索用的擾動幅度，不改變策略本身：
+    // 自我對戰必須與正式對局走同一套 GameLogic.evaluateMove，
+    // 否則訓練出來的棋譜對應的是另一個對手，學到的東西用不上。
+    const noise =
+      difficulty === 'easy' ? 400 : difficulty === 'medium' ? 150 : 60;
+
     while (moveCount < maxMoves) {
-      // 模擬AI選擇最佳落子
-      const bestMove = await this.simulateAIMove(board, currentPlayer, difficulty);
-      
+      const bestMove = GameLogic.selectBestMove(board, currentPlayer, noise);
+
       if (!bestMove) break;
 
       // 記錄移動
@@ -184,126 +194,6 @@ export class SelfTrainingService {
     console.log(`[SelfTraining] 遊戲 ${gameIndex + 1} 完成: ${game.finalOutcome}, 學習價值: ${game.trainingValue.toFixed(3)}`);
     
     return game;
-  }
-
-  /**
-   * 模擬AI選擇最佳落子
-   */
-  private async simulateAIMove(
-    board: Player[][], 
-    player: Player, 
-    difficulty: 'easy' | 'medium' | 'hard'
-  ): Promise<Position | null> {
-    // 獲取可用位置
-    const availableMoves = GameLogic.getRelevantMoves(board);
-    
-    if (availableMoves.length === 0) return null;
-
-    // 簡單的AI策略模擬
-    const moveScores = availableMoves.map(position => {
-      let score = 0;
-      
-      // 進攻分數
-      score += this.evaluateAttackPotential(board, position, player);
-      
-      // 防守分數
-      score += this.evaluateDefensePotential(board, position, player);
-      
-      // 位置分數
-      score += this.evaluatePositionValue(position);
-      
-      // 根據難度添加隨機性
-      const randomFactor = difficulty === 'easy' ? 0.3 : difficulty === 'medium' ? 0.1 : 0.05;
-      score += (Math.random() - 0.5) * randomFactor * 100;
-      
-      return { position, score };
-    });
-
-    // 選擇分數最高的位置
-    moveScores.sort((a, b) => b.score - a.score);
-    return moveScores[0]?.position || null;
-  }
-
-  /**
-   * 評估進攻潛力
-   */
-  private evaluateAttackPotential(board: Player[][], position: Position, player: Player): number {
-    let score = 0;
-    
-    // 檢查四個方向
-    const directions = [
-      [0, 1], [1, 0], [1, 1], [1, -1]
-    ];
-
-    for (const direction of directions) {
-      const [dr = 0, dc = 0] = direction;
-      let consecutive = 1; // 包括自己
-      let openEnds = 0;
-
-      // 向前檢查
-      for (let i = 1; i < 5; i++) {
-        const newRow = position.row + dr * i;
-        const newCol = position.col + dc * i;
-        
-        if (newRow >= 0 && newRow < 15 && newCol >= 0 && newCol < 15) {
-          if (board[newRow]?.[newCol] === player) {
-            consecutive++;
-          } else if (board[newRow]?.[newCol] === null) {
-            openEnds++;
-            break;
-          } else {
-            break;
-          }
-        } else {
-          break;
-        }
-      }
-
-      // 向後檢查
-      for (let i = 1; i < 5; i++) {
-        const newRow = position.row - dr * i;
-        const newCol = position.col - dc * i;
-        
-        if (newRow >= 0 && newRow < 15 && newCol >= 0 && newCol < 15) {
-          if (board[newRow]?.[newCol] === player) {
-            consecutive++;
-          } else if (board[newRow]?.[newCol] === null) {
-            openEnds++;
-            break;
-          } else {
-            break;
-          }
-        } else {
-          break;
-        }
-      }
-
-      // 根據連線數量和開放端點計算分數
-      if (consecutive >= 5) score += 1000; // 勝利
-      else if (consecutive === 4 && openEnds >= 1) score += 500; // 四連
-      else if (consecutive === 3 && openEnds >= 2) score += 100; // 三連
-      else if (consecutive === 2 && openEnds >= 2) score += 10; // 二連
-    }
-
-    return score;
-  }
-
-  /**
-   * 評估防守潛力
-   */
-  private evaluateDefensePotential(board: Player[][], position: Position, player: Player): number {
-    const opponent: Player = player === 'black' ? 'white' : 'black';
-    return this.evaluateAttackPotential(board, position, opponent) * 0.8; // 防守權重稍低
-  }
-
-  /**
-   * 評估位置價值
-   */
-  private evaluatePositionValue(position: Position): number {
-    const centerRow = 7;
-    const centerCol = 7;
-    const distanceFromCenter = Math.abs(position.row - centerRow) + Math.abs(position.col - centerCol);
-    return Math.max(0, 10 - distanceFromCenter); // 中心位置價值更高
   }
 
   /**
@@ -357,41 +247,45 @@ export class SelfTrainingService {
   }
 
   /**
-   * 存儲學習數據到向量資料庫
+   * 把自我對戰的成果寫進棋型書
+   *
+   * 原本寫入 Vectorize，但那條檢索路徑無法分辨盤面，寫進去的東西
+   * 實際上永遠取不回來。改寫入 move_patterns 後才真的會被 AI 查到。
    */
-  private async storeLearningData(games: TrainingGame[]): Promise<void> {
-    try {
-      for (const game of games) {
-        if (game.trainingValue < 0.3) continue; // 只存儲有價值的遊戲
+  private async storeLearningData(games: TrainingGame[]): Promise<number> {
+    let recorded = 0;
 
-        for (const move of game.moves) {
-          if (move.moveQuality === 'good') {
-            // 將高質量移動存儲為學習樣本
-            const gameState = {
-              id: game.id,
-              board: move.boardState,
-              moves: game.moves.slice(0, game.moves.indexOf(move) + 1),
-              currentPlayer: move.player,
-              mode: 'ai' as const,
-              winner: null,
-              players: { black: 'AI', white: 'AI' },
-              status: 'playing' as const,
-              createdAt: move.timestamp,
-              updatedAt: move.timestamp
-            };
+    for (const game of games) {
+      // 太短或和局的棋譜沒有參考價值
+      if (game.trainingValue < 0.3 || game.finalOutcome === 'draw') continue;
 
-            await this.vectorizeService.storeGameState(
-              gameState,
-              game.finalOutcome === 'win' ? 'advantage' : 'balanced'
-            );
-          }
-        }
+      // 轉成 PatternService 認得的形狀；勝方即實際連成五子的一方
+      const winner: Player = game.finalOutcome === 'win' ? 'black' : 'white';
+
+      try {
+        recorded += await this.patternService.recordGame({
+          id: game.id,
+          board: [],
+          currentPlayer: winner,
+          status: 'finished',
+          mode: 'ai',
+          moves: game.moves.map(m => ({
+            player: m.player,
+            position: m.position,
+            timestamp: m.timestamp,
+          })),
+          winner,
+          players: {},
+          createdAt: 0,
+          updatedAt: 0,
+        });
+      } catch (error) {
+        console.error(`[SelfTraining] 寫入棋型失敗 (${game.id}):`, error);
       }
-
-      console.log(`[SelfTraining] 存儲了 ${games.length} 個遊戲的學習數據`);
-    } catch (error) {
-      console.error('[SelfTraining] 存儲學習數據失敗:', error);
     }
+
+    console.log(`[SelfTraining] 已寫入 ${recorded} 筆棋型`);
+    return recorded;
   }
 
   /**
