@@ -13,6 +13,49 @@ import {
 import { GameLogic } from '../game/GameLogic';
 import { VectorizeService } from './VectorizeService';
 
+/** 模型指名的一個座標建議 */
+interface AdvicePoint {
+  row: number;
+  col: number;
+  weight: number;
+}
+
+/** 模型回傳的結構化盤面建議 */
+interface BoardAdvice {
+  /** 建議優先防守的點 */
+  threats: AdvicePoint[];
+  /** 建議優先進攻的點 */
+  opportunities: AdvicePoint[];
+  /** 給玩家看的簡短說明 */
+  strategy: string;
+}
+
+const EMPTY_ADVICE: BoardAdvice = {
+  threats: [],
+  opportunities: [],
+  strategy: '',
+};
+
+/**
+ * 模型建議的加分權重
+ *
+ * 上限刻意遠低於 evaluateMove 給「能直接獲勝」(100000) 與
+ * 「能擋下對手獲勝」(50000) 的加權：模型只能在雙方棋型相當時左右選點，
+ * 不可能蓋過戰術上的必然手。語言模型在 15x15 盤面上的空間推理並不可靠，
+ * 因此它的意見必須是加權建議，而不是決策權。
+ */
+const ADVICE_WEIGHTS: Record<string, number> = {
+  critical: 2000,
+  high: 1000,
+  medium: 400,
+};
+
+/** 每類建議最多採納幾點，避免模型灑點洗掉評分差異 */
+const MAX_ADVICE_POINTS = 4;
+
+/** 盤面分析使用的模型（Workers AI model id） */
+const ANALYSIS_MODEL = '@cf/zai-org/glm-4.7-flash';
+
 export class AIEngine {
   private env: Env;
   private vectorizeService: VectorizeService;
@@ -62,69 +105,23 @@ export class AIEngine {
     }
 
     try {
-      let boardAnalysis: string;
-      let historicalSuggestions: { suggestions: Position[]; reasoning: string[] };
-      let gameAdvantage: GameAnalysis | null = null;
-      
-      // 簡單模式使用快速分析，但允許10秒超時
-      if (difficulty === 'easy') {
-        console.log(`[AI] 簡單模式 - 開始並行分析 (10秒超時)`);
-        const analysisStartTime = Date.now();
-        
-        const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
-        const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
-        
-        // 簡單模式設置10秒超時
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            console.log(`[AI] 簡單模式分析超時 (10秒)`);
-            reject(new Error('AI 分析超時'));
-          }, 10000);
-        });
+      const timeoutMs =
+        difficulty === 'easy' ? 10000 : difficulty === 'medium' ? 20000 : 30000;
 
-        [boardAnalysis, historicalSuggestions] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise]),
-          timeoutPromise
-        ]).catch(() => {
-          // 超時時使用快速分析
-          console.warn('[AI] 簡單模式AI分析超時，使用快速模式');
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: ['快速模式'] }];
-        });
-        
-        // 使用基本優勢分析替代Text Classification
-        gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
-        
-        console.log(`[AI] 簡單模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms`);
-      } else {
-        // 中等和困難模式使用完整分析，但設置超時
-        const timeoutMs = difficulty === 'medium' ? 20000 : 30000;
-        console.log(`[AI] ${difficulty}模式 - 開始並行分析 (${timeoutMs}ms超時)`);
-        const analysisStartTime = Date.now();
-        
-        const analysisPromise = this.analyzeBoardState(gameState, aiPlayer);
-        const historyPromise = this.getHistoricalSuggestions(gameState, aiPlayer);
-        
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            console.log(`[AI] ${difficulty}模式分析超時 (${timeoutMs}ms)`);
-            reject(new Error('AI 分析超時'));
-          }, timeoutMs);
-        });
+      console.log(`[AI] ${difficulty}模式 - 開始並行分析 (${timeoutMs}ms超時)`);
+      const analysisStartTime = Date.now();
 
-        [boardAnalysis, historicalSuggestions] = await Promise.race([
-          Promise.all([analysisPromise, historyPromise]),
-          timeoutPromise
-        ]).catch(() => {
-          // 超時時使用快速分析
-          console.warn(`[AI] ${difficulty}模式分析超時，使用快速模式`);
-          return [this.getQuickAnalysis(gameState, aiPlayer), { suggestions: [], reasoning: [] }];
-        });
-        
-        // 使用基本優勢分析替代Text Classification
-        gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
-        
-        console.log(`[AI] ${difficulty}模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms`);
-      }
+      const [advice, historicalSuggestions] = await this.gatherAnalysis(
+        gameState,
+        aiPlayer,
+        timeoutMs
+      );
+      const gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
+
+      console.log(
+        `[AI] ${difficulty}模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms` +
+          `, 威脅點: ${advice.threats.length}, 機會點: ${advice.opportunities.length}`
+      );
 
       // 根據分析結果、歷史建議和難度選擇最佳落子
       const selectStartTime = Date.now();
@@ -132,7 +129,7 @@ export class AIEngine {
         gameState,
         availableMoves,
         aiPlayer,
-        boardAnalysis,
+        advice,
         difficulty,
         historicalSuggestions,
         gameAdvantage
@@ -150,71 +147,34 @@ export class AIEngine {
   }
 
   /**
-   * 快速分析棋盤狀態（無需AI）
+   * 並行取得模型建議與歷史棋譜建議，逾時則退回純啟發式評估
    */
-  private getQuickAnalysis(gameState: GameState, player: Player): string {
-    let totalMoves = 0;
-    
-    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        if (gameState.board[row]?.[col] !== null) {
-          totalMoves++;
-        }
-      }
-    }
+  private async gatherAnalysis(
+    gameState: GameState,
+    player: Player,
+    timeoutMs: number
+  ): Promise<
+    [BoardAdvice, { suggestions: Position[]; reasoning: string[] }]
+  > {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('AI 分析超時')), timeoutMs);
+    });
 
-    const moveHistory = totalMoves > 0 ? `已進行 ${totalMoves} 步` : '遊戲開始';
-    
-    // 快速分析：檢查是否有威脅或機會
-    const hasThreats = this.hasImmediateThreats(gameState.board, player);
-    const hasOpportunities = this.hasImmediateOpportunities(gameState.board, player);
-    
-    let analysis = `當前輪到: ${player === 'black' ? '黑棋' : '白棋'}, ${moveHistory}`;
-    
-    if (hasThreats) {
-      analysis += '。檢測到對手威脅，需要防守';
+    try {
+      return await Promise.race([
+        Promise.all([
+          this.analyzeBoard(gameState, player),
+          this.getHistoricalSuggestions(gameState, player),
+        ]),
+        timeoutPromise,
+      ]);
+    } catch (error) {
+      console.warn(
+        `[AI] 分析未於 ${timeoutMs}ms 內完成，改用純啟發式評估:`,
+        error
+      );
+      return [EMPTY_ADVICE, { suggestions: [], reasoning: [] }];
     }
-    if (hasOpportunities) {
-      analysis += '。發現進攻機會';
-    }
-    
-    return analysis;
-  }
-
-  /**
-   * 檢查是否有立即威脅
-   */
-  private hasImmediateThreats(board: Player[][], player: Player): boolean {
-    const opponent = GameLogic.getOpponent(player);
-    
-    // 檢查對手是否有4子連線
-    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        if (board[row]?.[col] === opponent) {
-          if (this.checkConsecutiveCount(board, row, col, opponent) >= 4) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  /**
-   * 檢查是否有立即機會
-   */
-  private hasImmediateOpportunities(board: Player[][], player: Player): boolean {
-    // 檢查自己是否有4子連線
-    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        if (board[row]?.[col] === player) {
-          if (this.checkConsecutiveCount(board, row, col, player) >= 4) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
   }
 
   /**
@@ -291,76 +251,211 @@ export class AIEngine {
   }
 
   /**
-   * 使用 Workers AI 分析棋盤狀態
+   * 把棋盤畫成帶行列座標的格式
+   *
+   * 原本送給模型的是不含座標的字串，模型即使看懂局面也無法指出「哪一點」，
+   * 這是它先前完全無法參與決策的根本原因。
    */
-  private async analyzeBoardState(
+  private renderBoardWithCoordinates(board: Player[][]): string {
+    const header =
+      '    ' +
+      Array.from({ length: GameLogic.BOARD_SIZE }, (_, c) =>
+        c.toString().padStart(2, ' ')
+      ).join(' ');
+
+    const rows = board.map((row, r) => {
+      const cells = row
+        .map(cell => (cell === 'black' ? ' B' : cell === 'white' ? ' W' : ' .'))
+        .join(' ');
+      return `${r.toString().padStart(2, ' ')}  ${cells}`;
+    });
+
+    return [header, ...rows].join('\n');
+  }
+
+  /**
+   * 使用 Workers AI 分析棋盤，取得結構化的威脅與機會座標
+   */
+  private async analyzeBoard(
     gameState: GameState,
     player: Player
-  ): Promise<string> {
+  ): Promise<BoardAdvice> {
     const startTime = Date.now();
-    console.log(`[AI] 開始棋盤狀態分析 - ${player}`);
-    
-    const boardString = GameLogic.boardToString(gameState.board);
-    // 計算棋盤上的棋子數量來估算步數
-    let totalMoves = 0;
-    for (let row = 0; row < GameLogic.BOARD_SIZE; row++) {
-      for (let col = 0; col < GameLogic.BOARD_SIZE; col++) {
-        if (gameState.board[row]?.[col] !== null) {
-          totalMoves++;
-        }
-      }
-    }
+    const boardString = this.renderBoardWithCoordinates(gameState.board);
+    const me = player === 'black' ? 'B（黑棋）' : 'W（白棋）';
+    const rival = player === 'black' ? 'W（白棋）' : 'B（黑棋）';
 
-    const moveHistory = totalMoves > 0 ? `已進行 ${totalMoves} 步` : '遊戲開始';
+    const prompt = `你是五子棋專家。棋盤為 15x15，行列編號皆為 0 到 14。
 
-    // 優化提示詞以平衡速度和質量
-    const prompt = `你是五子棋專家，快速簡潔分析以下棋盤狀態：
-
-棋盤狀態 (B=黑棋, W=白棋, .=空位):
+棋盤（B=黑棋, W=白棋, .=空位，最上方為列號，最左方為行號）:
 ${boardString}
 
-遊戲信息：
-- 當前輪到: ${player === 'black' ? '黑棋' : '白棋'}
-- 進度: ${moveHistory}
+你執 ${me}，對手執 ${rival}，現在輪到你下。
 
-請快速分析：
-1. 當前局面的關鍵威脅
-2. 可用的進攻機會
-3. 推薦的戰略方向
+請找出：
+- threats：若不處理、對手下一手就會取得重大優勢的「空位」座標（防守點）
+- opportunities：你下了之後能取得重大優勢的「空位」座標（進攻點）
 
-請用繁體中文回答，保持分析簡潔明確，不超過150字。`;
+嚴格規則：
+1. 只能回報目前是「.」的空位，不可回報已有棋子的位置。
+2. row 與 col 都必須是 0 到 14 的整數。
+3. severity 只能是 "critical"、"high"、"medium" 其中之一。
+4. 每個陣列最多 ${MAX_ADVICE_POINTS} 個座標，寧缺勿濫，沒有就給空陣列。
+5. 只輸出 JSON，不要有任何說明文字或 markdown 標記。
+
+輸出格式：
+{"threats":[{"row":7,"col":8,"severity":"critical"}],"opportunities":[{"row":5,"col":5,"severity":"high"}],"strategy":"一句話戰略說明，繁體中文，40字以內"}`;
 
     try {
-      console.log(`[AI] 調用Llama模型分析棋盤狀態`);
-      const llamaStartTime = Date.now();
-      
-      // Workers AI 的回傳型別是同步/非同步的聯集，這裡固定走同步呼叫
-      const response = (await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+      const response = (await this.env.AI.run(ANALYSIS_MODEL, {
         messages: [
           {
             role: 'system',
-            content: '你是五子棋專家，快速簡潔分析局面。',
+            content:
+              '你是五子棋專家，只輸出符合要求的 JSON，不輸出任何其他內容。',
           },
-          {
-            role: 'user',
-            content: prompt,
-          },
+          { role: 'user', content: prompt },
         ],
-        max_tokens: 200,
-        temperature: 0.2,
-      })) as { response?: string };
+        max_tokens: 1000,
+        temperature: 0.1,
+        // GLM 預設會先輸出一長串思考內容，實測要 27~45 秒且常在產出答案前
+        // 就耗盡 token（finish_reason=length）。關閉思考後同一題約 2 秒完成。
+        chat_template_kwargs: { enable_thinking: false },
+      }));
 
-      const llamaTime = Date.now() - llamaStartTime;
-      console.log(`[AI] Llama模型分析完成 - 耗時: ${llamaTime}ms`);
-      console.log(`[AI] 棋盤狀態分析總耗時: ${Date.now() - startTime}ms`);
+      const advice = this.parseAdvice(
+        this.extractAdvicePayload(response),
+        gameState.board
+      );
 
-      return response.response || '無法分析當前局面';
+      console.log(
+        `[AI] 模型分析完成 - 耗時: ${Date.now() - startTime}ms` +
+          `, 採納威脅點 ${advice.threats.length}, 機會點 ${advice.opportunities.length}`
+      );
+
+      return advice;
     } catch (error) {
-      const errorTime = Date.now() - startTime;
-      console.error(`[AI] 棋盤狀態分析失敗 (耗時: ${errorTime}ms)，使用快速分析:`, error);
-      // 如果AI失敗，返回快速分析結果
-      return this.getQuickAnalysis(gameState, player);
+      console.error(
+        `[AI] 模型分析失敗 (耗時: ${Date.now() - startTime}ms)，本手不採納模型建議:`,
+        error
+      );
+      return EMPTY_ADVICE;
     }
+  }
+
+  /**
+   * 把 Workers AI 的回傳正規化成物件
+   *
+   * 同一個 AI binding 對不同模型有三種形狀，實測確認：
+   *   - { response: 已解析的物件 }          llama 系列（Workers AI 會自動 parse JSON）
+   *   - { response: "字串" }                 舊式文字回覆
+   *   - { choices: [{ message: { content } }] }  OpenAI 格式（GLM 等）
+   * 只認其中一種就會在換模型時靜默拿到空建議。
+   */
+  private extractAdvicePayload(result: unknown): unknown {
+    const res = result as {
+      response?: unknown;
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+
+    if (res?.response && typeof res.response === 'object') {
+      return res.response;
+    }
+
+    const content = res?.choices?.[0]?.message?.content;
+    const text =
+      typeof res?.response === 'string'
+        ? res.response
+        : typeof content === 'string'
+          ? content
+          : null;
+
+    if (text === null) {
+      console.warn('[AI] 無法從模型回覆取出內容，忽略本次建議');
+      return null;
+    }
+
+    // 模型常會加上 ```json 圍欄或前後贅字，取最外層的大括號
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+
+    if (start === -1 || end <= start) {
+      console.warn('[AI] 模型回覆中找不到 JSON，忽略本次建議');
+      return null;
+    }
+
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      console.warn('[AI] 模型回覆不是合法 JSON，忽略本次建議');
+      return null;
+    }
+  }
+
+  /**
+   * 驗證模型回傳的建議
+   *
+   * 語言模型在盤面上的空間推理並不可靠，回傳越界、已有棋子、
+   * 甚至非數字的座標都很常見（實測就出現過指向已有棋子的點），
+   * 因此每一點都必須逐一驗證後才採納。
+   */
+  private parseAdvice(payload: unknown, board: Player[][]): BoardAdvice {
+    if (!payload || typeof payload !== 'object') {
+      return EMPTY_ADVICE;
+    }
+
+    const source = payload as {
+      threats?: unknown;
+      opportunities?: unknown;
+      strategy?: unknown;
+    };
+
+    const toPoints = (value: unknown, label: string): AdvicePoint[] => {
+      if (!Array.isArray(value)) return [];
+
+      const points: AdvicePoint[] = [];
+
+      for (const entry of value) {
+        if (points.length >= MAX_ADVICE_POINTS) break;
+
+        const item = entry as {
+          row?: unknown;
+          col?: unknown;
+          severity?: unknown;
+        };
+        const row = Number(item?.row);
+        const col = Number(item?.col);
+
+        if (!Number.isInteger(row) || !Number.isInteger(col)) continue;
+        if (!GameLogic.isValidPosition({ row, col })) continue;
+        // 已有棋子的位置不可能是落子建議
+        if (!GameLogic.isEmptyPosition(board, { row, col })) {
+          console.warn(`[AI] 模型建議的${label} (${row},${col}) 已有棋子，捨棄`);
+          continue;
+        }
+        // 同一點只採納一次
+        if (points.some(p => p.row === row && p.col === col)) continue;
+
+        const severity =
+          typeof item.severity === 'string' ? item.severity : 'medium';
+        points.push({
+          row,
+          col,
+          weight: ADVICE_WEIGHTS[severity] ?? ADVICE_WEIGHTS.medium!,
+        });
+      }
+
+      return points;
+    };
+
+    const strategy =
+      typeof source.strategy === 'string' ? source.strategy.slice(0, 120) : '';
+
+    return {
+      threats: toPoints(source.threats, '防守點'),
+      opportunities: toPoints(source.opportunities, '進攻點'),
+      strategy,
+    };
   }
 
   /**
@@ -370,7 +465,7 @@ ${boardString}
     gameState: GameState,
     availableMoves: Position[],
     player: Player,
-    analysis: string,
+    advice: BoardAdvice,
     difficulty: 'easy' | 'medium' | 'hard',
     historicalSuggestions?: {
       suggestions: Position[];
@@ -404,25 +499,23 @@ ${boardString}
         }
       }
       
-      // 根據AI分析結果調整分數
-      if (analysis && analysis.length > 0) {
-        // 如果AI分析提到防守，對防守位置加分
-        if (analysis.includes('防守') || analysis.includes('威脅')) {
-          const isDefensiveMove = this.isDefensiveMove(gameState, position, player);
-          if (isDefensiveMove) {
-            aiAnalysisBonus = 150;
-          }
-        }
-        
-        // 如果AI分析提到進攻，對進攻位置加分
-        if (analysis.includes('進攻') || analysis.includes('機會')) {
-          const isOffensiveMove = this.isOffensiveMove(gameState, position, player);
-          if (isOffensiveMove) {
-            aiAnalysisBonus = 150;
-          }
-        }
+      // 採納模型指名的座標：先前是比對回覆裡有沒有「防守/進攻」等字眼，
+      // 而提示詞本身就要求模型談這些，等於恆真，模型實際上沒有參與決策。
+      // 現在改為只有模型明確指到這一點才加分，權重依嚴重程度。
+      const threat = advice.threats.find(
+        p => p.row === position.row && p.col === position.col
+      );
+      if (threat) {
+        aiAnalysisBonus += threat.weight;
       }
-      
+
+      const opportunity = advice.opportunities.find(
+        p => p.row === position.row && p.col === position.col
+      );
+      if (opportunity) {
+        aiAnalysisBonus += opportunity.weight;
+      }
+
       // 根據局面優劣勢調整分數
       if (gameAdvantage) {
         const isDefensiveMove = this.isDefensiveMove(gameState, position, player);
@@ -485,42 +578,61 @@ ${boardString}
         break;
     }
 
-    // 直接返回落子結果，不生成理由
     return {
       position: selectedMove.position,
       confidence: Math.min(selectedMove.score / 1000, 1.0),
-      reasoning: `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
+      reasoning:
+        advice.strategy ||
+        `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
     };
   }
 
   /**
-   * 判斷是否為防守性落子
+   * 判斷是否為防守性落子：對手若搶下此點會不會形成四以上
+   *
+   * 舊版是把我方棋子放上去後呼叫 hasImmediateThreats(board, opponent)，
+   * 而該函式內部檢查的是「參數的對手」，等於繞回檢查我方，
+   * 導致真正的擋點回報 false、我方成四反而回報 true，
+   * 且與 isOffensiveMove 完全等價。
    */
-  private isDefensiveMove(gameState: GameState, position: Position, player: Player): boolean {
-    const opponent = player === 'black' ? 'white' : 'black';
-    
-    // 模擬在這個位置落子
+  private isDefensiveMove(
+    gameState: GameState,
+    position: Position,
+    player: Player
+  ): boolean {
+    const opponent = GameLogic.getOpponent(player);
     const testBoard = gameState.board.map(row => [...row]);
-    if (testBoard[position.row] && testBoard[position.row]![position.col] === null) {
-      testBoard[position.row]![position.col] = player;
-    }
-    
-    // 檢查是否阻止了對手的連線
-    return this.hasImmediateThreats(testBoard, opponent);
+    testBoard[position.row]![position.col] = opponent;
+
+    return (
+      this.checkConsecutiveCount(
+        testBoard,
+        position.row,
+        position.col,
+        opponent
+      ) >= 4
+    );
   }
 
   /**
-   * 判斷是否為進攻性落子
+   * 判斷是否為進攻性落子：我方下在此點會不會形成四以上
    */
-  private isOffensiveMove(gameState: GameState, position: Position, player: Player): boolean {
-    // 模擬在這個位置落子
+  private isOffensiveMove(
+    gameState: GameState,
+    position: Position,
+    player: Player
+  ): boolean {
     const testBoard = gameState.board.map(row => [...row]);
-    if (testBoard[position.row] && testBoard[position.row]![position.col] === null) {
-      testBoard[position.row]![position.col] = player;
-    }
-    
-    // 檢查是否創造了進攻機會
-    return this.hasImmediateOpportunities(testBoard, player);
+    testBoard[position.row]![position.col] = player;
+
+    return (
+      this.checkConsecutiveCount(
+        testBoard,
+        position.row,
+        position.col,
+        player
+      ) >= 4
+    );
   }
 
   /**
@@ -636,28 +748,55 @@ ${boardString}
     gameState: GameState,
     player: Player
   ): GameAnalysis {
-    const playerMoves = gameState.moves.filter(
-      move => move.player === player
-    ).length;
-    const opponentMoves = gameState.moves.filter(
-      move => move.player === GameLogic.getOpponent(player)
-    ).length;
+    // 舊版只比較雙方棋子數。五子棋輪到白方時黑方必定多一子，
+    // 因此 AI 永遠被判為「後手劣勢」，完全不帶盤面資訊。
+    // 改為比較雙方在同一批要點上能取得的最佳棋型分數。
+    const opponent = GameLogic.getOpponent(player);
+    const candidates = GameLogic.getRelevantMoves(gameState.board);
 
-    // 簡單的評估邏輯
-    let advantage: 'advantage' | 'disadvantage' | 'draw' = 'draw';
-    let confidence = 0.5;
-    let reasoning = '局面大致平衡';
+    let bestSelf = 0;
+    let bestOpponent = 0;
 
-    if (playerMoves > opponentMoves) {
-      advantage = 'advantage';
-      confidence = 0.6;
-      reasoning = '先手優勢';
-    } else if (playerMoves < opponentMoves) {
-      advantage = 'disadvantage';
-      confidence = 0.6;
-      reasoning = '後手劣勢';
+    for (const position of candidates) {
+      bestSelf = Math.max(
+        bestSelf,
+        GameLogic.evaluatePosition(gameState.board, position, player)
+      );
+      bestOpponent = Math.max(
+        bestOpponent,
+        GameLogic.evaluatePosition(gameState.board, position, opponent)
+      );
     }
 
-    return { advantage, confidence, reasoning };
+    const total = bestSelf + bestOpponent;
+
+    if (total === 0) {
+      return {
+        advantage: 'draw',
+        confidence: 0.5,
+        reasoning: '開局階段，雙方尚未形成棋型',
+      };
+    }
+
+    const share = bestSelf / total;
+    const confidence = Math.min(0.95, 0.5 + Math.abs(share - 0.5));
+
+    if (share > 0.6) {
+      return {
+        advantage: 'advantage',
+        confidence,
+        reasoning: '我方棋型較強，可續行進攻',
+      };
+    }
+
+    if (share < 0.4) {
+      return {
+        advantage: 'disadvantage',
+        confidence,
+        reasoning: '對手棋型較強，應優先防守',
+      };
+    }
+
+    return { advantage: 'draw', confidence, reasoning: '雙方棋型相當' };
   }
 }
