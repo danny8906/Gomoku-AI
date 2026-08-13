@@ -7,7 +7,7 @@ import { RoomService } from '../database/RoomService';
 
 export async function handleCron(
   env: Env,
-  ctx: ExecutionContext
+  _ctx?: ExecutionContext
 ): Promise<void> {
   console.log('開始執行定期維護任務');
 
@@ -40,10 +40,10 @@ export async function handleCron(
  */
 export async function handleHourlyCleanup(
   env: Env,
-  ctx: ExecutionContext
+  _ctx?: ExecutionContext
 ): Promise<void> {
   console.log('執行每小時清理任務');
-  await handleCron(env, ctx);
+  await handleCron(env, _ctx);
 }
 
 /**
@@ -51,7 +51,7 @@ export async function handleHourlyCleanup(
  */
 export async function handleDailyCleanup(
   env: Env,
-  ctx: ExecutionContext
+  _ctx?: ExecutionContext
 ): Promise<void> {
   console.log('執行每日深度清理任務');
 

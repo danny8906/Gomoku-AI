@@ -9,25 +9,38 @@ import { SelfTrainingService } from '../ai/SelfTrainingService';
 /**
  * 開始AI自我訓練
  */
-export async function handleStartAITraining(request: Request, env: Env): Promise<Response> {
+export async function handleStartAITraining(
+  request: Request,
+  env: Env,
+  ctx?: ExecutionContext
+): Promise<Response> {
   try {
     const { difficulty = 'medium' } = (await request.json()) as { difficulty?: 'easy' | 'medium' | 'hard' };
-    
+
+    if (!['easy', 'medium', 'hard'].includes(difficulty)) {
+      return new Response(JSON.stringify({ error: '不支援的難度' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
     console.log(`🚀 開始AI自我訓練 - 難度: ${difficulty}`);
-    
-    // 在後台啟動訓練，避免阻塞請求
+
     const trainingService = new SelfTrainingService(env);
-    
-    // 使用 setTimeout 讓訓練在後台執行
-    setTimeout(async () => {
-      try {
-        const session = await trainingService.startTrainingSession(difficulty);
-        console.log(`✅ AI自我訓練完成: ${session.id}`);
-      } catch (error) {
-        console.error('❌ AI自我訓練失敗:', error);
-      }
-    }, 0);
-    
+
+    // 回應送出後 Worker 就會終止背景工作，setTimeout 排的訓練根本不會跑完，
+    // 必須交給 waitUntil 才能在回應之後繼續執行
+    const training = trainingService
+      .startTrainingSession(difficulty)
+      .then(session => console.log(`✅ AI自我訓練完成: ${session.id}`))
+      .catch(error => console.error('❌ AI自我訓練失敗:', error));
+
+    if (ctx) {
+      ctx.waitUntil(training);
+    } else {
+      await training;
+    }
+
     return new Response(
       JSON.stringify({
         message: 'AI自我訓練已開始',
@@ -47,7 +60,6 @@ export async function handleStartAITraining(request: Request, env: Env): Promise
     return new Response(
       JSON.stringify({
         error: '啟動AI自我訓練失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
         timestamp: new Date().toISOString(),
       }),
       {
@@ -92,7 +104,6 @@ export async function handleGetTrainingStats(request: Request, env: Env): Promis
     return new Response(
       JSON.stringify({
         error: '獲取AI訓練統計失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
         timestamp: new Date().toISOString(),
       }),
       {

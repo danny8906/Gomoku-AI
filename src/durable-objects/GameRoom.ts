@@ -5,6 +5,10 @@
 import { GameState, Player, Position, WebSocketMessage, Env } from '../types';
 import { GameLogic } from '../game/GameLogic';
 import { AIEngine } from '../ai/AIEngine';
+import { verifyJWT } from '../utils/auth';
+
+/** 玩家離線後的寬限期限，以 userId 對應到期時間 */
+type LeaveDeadlines = Record<string, number>;
 
 export class GameRoom {
   private state: DurableObjectState;
@@ -14,19 +18,74 @@ export class GameRoom {
   private gameState: GameState | null = null;
   private roomCode: string = '';
   private lastActivityTime: number = Date.now();
-  private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly INACTIVE_TIMEOUT = 30 * 60 * 1000; // 30 分鐘無活動後清理
-  private readonly CLEANUP_CHECK_INTERVAL = 5 * 60 * 1000; // 每 5 分鐘檢查一次
-  
-  // PVP玩家離開檢測
-  private playerLeaveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private readonly PLAYER_LEAVE_TIMEOUT = 30 * 1000; // 30秒超時
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     console.log(`GameRoom 實例創建: ID=${state.id.toString()}`);
-    this.startCleanupTimer();
+  }
+
+  /**
+   * Durable Object 閒置時會被回收，setTimeout 不會存活，
+   * 因此離線判定與房間清理都改由 Alarm 觸發。
+   */
+  async alarm(): Promise<void> {
+    await this.loadRoomState();
+    const now = Date.now();
+
+    const deadlines = await this.getLeaveDeadlines();
+    const expired = Object.entries(deadlines).filter(
+      ([, deadline]) => deadline <= now
+    );
+
+    if (expired.length > 0) {
+      for (const [userId] of expired) {
+        delete deadlines[userId];
+      }
+      await this.state.storage.put('leaveDeadlines', deadlines);
+
+      for (const [userId] of expired) {
+        await this.handlePlayerTimeout(userId);
+      }
+    }
+
+    if (
+      now - this.lastActivityTime > this.INACTIVE_TIMEOUT &&
+      this.sessions.size === 0
+    ) {
+      console.log(`房間 ${this.roomCode} 已閒置超過上限，開始清理`);
+      await this.cleanupRoom();
+      return;
+    }
+
+    await this.scheduleNextAlarm(true);
+  }
+
+  private async getLeaveDeadlines(): Promise<LeaveDeadlines> {
+    return ((await this.state.storage.get('leaveDeadlines')) ||
+      {}) as LeaveDeadlines;
+  }
+
+  /**
+   * 排定下一次喚醒時間
+   *
+   * force=false 時只會把鬧鐘往前調，避免持續的活動不斷延後既有的離線判定。
+   */
+  private async scheduleNextAlarm(force = false): Promise<void> {
+    const deadlines = await this.getLeaveDeadlines();
+    const candidates = [
+      ...Object.values(deadlines),
+      this.lastActivityTime + this.INACTIVE_TIMEOUT,
+    ];
+
+    const next = Math.min(...candidates);
+    const current = await this.state.storage.getAlarm();
+
+    if (force || current === null || current > next) {
+      await this.state.storage.setAlarm(next);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -80,14 +139,23 @@ export class GameRoom {
     const url = new URL(request.url);
     const userId = url.searchParams.get('userId');
     const roomCode = url.searchParams.get('roomCode');
-    console.log('解析的 userId:', userId);
+    const token = url.searchParams.get('token');
     console.log('解析的 roomCode:', roomCode);
-    console.log('完整 URL:', url.toString());
-    console.log('查詢參數:', url.search);
 
     if (!userId) {
       console.log('缺少 userId 參數');
       return new Response('Missing userId', { status: 400 });
+    }
+
+    if (userId.length > 64) {
+      return new Response('Invalid userId', { status: 400 });
+    }
+
+    // userId 只是自稱的身分。若對應到已註冊帳號，就必須出示該帳號的 token，
+    // 否則任何人都能用別人的 userId 連線、代為落子或以其名義發言。
+    if (!(await this.isConnectionAuthorized(userId, token))) {
+      console.log(`拒絕未授權的連線: ${userId}`);
+      return new Response('Unauthorized', { status: 401 });
     }
 
     const [client, server] = Object.values(new WebSocketPair());
@@ -102,6 +170,38 @@ export class GameRoom {
       status: 101,
       webSocket: client,
     });
+  }
+
+  /**
+   * 判斷連線者是否有權使用這個 userId
+   *
+   * 匿名玩家（資料庫沒有密碼）維持免登入；已註冊帳號則必須帶有效 token。
+   */
+  private async isConnectionAuthorized(
+    userId: string,
+    token: string | null
+  ): Promise<boolean> {
+    if (token) {
+      const verification = await verifyJWT(token, this.env);
+      if (verification.valid && verification.payload?.sub === userId) {
+        return true;
+      }
+      return false;
+    }
+
+    try {
+      const row = await this.env.DB.prepare(
+        `SELECT password_hash FROM users WHERE id = ?1`
+      )
+        .bind(userId)
+        .first();
+
+      return !row?.password_hash;
+    } catch (error) {
+      // 查不到就保守拒絕，避免資料庫異常變成繞過驗證的破口
+      console.error('檢查連線授權失敗:', error);
+      return false;
+    }
   }
 
   /**
@@ -123,13 +223,13 @@ export class GameRoom {
     // 加入會話
     this.sessions.set(webSocket, { userId });
 
-    // 檢查是否有該玩家的離開計時器，如果有則取消
-    const existingTimer = this.playerLeaveTimers.get(userId);
-    if (existingTimer) {
+    // 檢查是否有該玩家的離線寬限期，如果有則取消
+    const deadlines = await this.getLeaveDeadlines();
+    if (deadlines[userId]) {
       console.log(`Player ${userId} reconnected, cancelling timeout timer`);
-      clearTimeout(existingTimer);
-      this.playerLeaveTimers.delete(userId);
-      
+      delete deadlines[userId];
+      await this.state.storage.put('leaveDeadlines', deadlines);
+
       // 通知其他玩家該玩家已重新連接
       this.broadcast({
         type: 'playerReconnected',
@@ -205,23 +305,27 @@ export class GameRoom {
       if (session) {
         console.log(`玩家 ${session.userId} 的 WebSocket 連接關閉`);
         
-        // 檢查是否已經處理過這個玩家的離開（避免重複觸發）
-        const existingTimer = this.playerLeaveTimers.get(session.userId);
-        if (!existingTimer) {
-          // 如果是PVP模式且遊戲進行中，且用戶主動離開（代碼1000），啟動玩家離開檢測
-          if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing' && event.code === 1000) {
-            console.log(`觸發玩家主動離開檢測: ${session.userId}`);
-            await this.handlePlayerDisconnect(session.userId);
-          } else if (this.gameState && this.gameState.mode === 'pvp' && this.gameState.status === 'playing' && event.code !== 1000) {
-            // 非主動離開（網路斷線等），也啟動檢測
-            console.log(`觸發玩家斷線檢測: ${session.userId}`);
-            await this.handlePlayerDisconnect(session.userId);
-          }
-        } else {
-          console.log(`玩家 ${session.userId} 的離開檢測已經在進行中，跳過重複觸發`);
-        }
-        
         this.sessions.delete(webSocket);
+
+        // 檢查是否已經處理過這個玩家的離開（避免重複觸發）
+        const pending = await this.getLeaveDeadlines();
+        const stillConnected = [...this.sessions.values()].some(
+          s => s.userId === session.userId
+        );
+
+        if (pending[session.userId]) {
+          console.log(`玩家 ${session.userId} 的離開檢測已經在進行中，跳過重複觸發`);
+        } else if (stillConnected) {
+          console.log(`玩家 ${session.userId} 仍有其他連線，不啟動離開檢測`);
+        } else if (
+          this.gameState &&
+          this.gameState.mode === 'pvp' &&
+          this.gameState.status === 'playing'
+        ) {
+          // 主動離開（1000）與網路斷線都走同一套寬限期判定
+          console.log(`觸發玩家離開檢測: ${session.userId} (code=${event.code})`);
+          await this.handlePlayerDisconnect(session.userId);
+        }
       } else {
         console.log('關閉的 WebSocket 沒有對應的會話');
       }
@@ -311,6 +415,22 @@ export class GameRoom {
       return;
     }
 
+    // 座標由客戶端提供，先確認是合法整數再交給遊戲邏輯
+    const position = moveData?.position;
+    if (
+      !position ||
+      !Number.isInteger(position.row) ||
+      !Number.isInteger(position.col) ||
+      !GameLogic.isValidPosition(position)
+    ) {
+      this.sendToClient(webSocket, {
+        type: 'error',
+        data: { message: '無效的位置' },
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
     try {
       // 執行落子
       this.gameState = GameLogic.makeMove(
@@ -343,7 +463,7 @@ export class GameRoom {
 
       // 如果遊戲結束，保存到資料庫
       if (this.gameState.status === 'finished') {
-        await this.saveGameRecord();
+        await this.finalizeGame();
         await this.updateRoomStatus('finished');
       }
     } catch (error) {
@@ -394,7 +514,7 @@ export class GameRoom {
 
       // 如果遊戲結束，保存記錄
       if (this.gameState.status === 'finished') {
-        await this.saveGameRecord();
+        await this.finalizeGame();
         await this.updateRoomStatus('finished');
       }
     } catch (error) {
@@ -564,11 +684,11 @@ export class GameRoom {
    */
   private async handlePlayerDisconnect(userId: string): Promise<void> {
     console.log(`Player ${userId} disconnected in PVP mode`);
-    
+
     // 通知其他玩家該玩家已離開
     this.broadcast({
       type: 'playerDisconnected',
-      data: { 
+      data: {
         userId: userId,
         message: 'Player has left the game. Game will end in 30 seconds if they don\'t return.',
         timeout: this.PLAYER_LEAVE_TIMEOUT
@@ -576,18 +696,11 @@ export class GameRoom {
       timestamp: Date.now(),
     });
 
-    // 設置30秒超時計時器
-    const timer = setTimeout(async () => {
-      await this.handlePlayerTimeout(userId);
-    }, this.PLAYER_LEAVE_TIMEOUT);
-
-    // 清除之前的計時器（如果存在）
-    const existingTimer = this.playerLeaveTimers.get(userId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
-    }
-
-    this.playerLeaveTimers.set(userId, timer);
+    // 寬限期存進 storage，由 alarm 負責到期判定
+    const deadlines = await this.getLeaveDeadlines();
+    deadlines[userId] = Date.now() + this.PLAYER_LEAVE_TIMEOUT;
+    await this.state.storage.put('leaveDeadlines', deadlines);
+    await this.scheduleNextAlarm();
   }
 
   /**
@@ -595,42 +708,55 @@ export class GameRoom {
    */
   private async handlePlayerTimeout(userId: string): Promise<void> {
     console.log(`Player ${userId} timed out, ending game`);
-    
+
     if (!this.gameState || this.gameState.status !== 'playing') {
       return;
     }
 
-    // 確定對手獲勝
-    const opponentPlayer = userId === this.gameState.players.black ? 'white' : 'black';
-    const winnerUserId = opponentPlayer === 'black' ? this.gameState.players.black : this.gameState.players.white;
-    
-    if (winnerUserId) {
-      this.gameState.winner = opponentPlayer;
-      this.gameState.status = 'finished';
-      this.gameState.updatedAt = Date.now();
-
-      // 廣播遊戲結束
-      this.broadcast({
-        type: 'gameEnd',
-        data: {
-          gameState: this.gameState,
-          reason: 'opponentTimeout',
-          message: `Player ${userId} disconnected. ${winnerUserId} wins by timeout.`
-        },
-        timestamp: Date.now(),
-      });
-
-      // 保存遊戲狀態
-      await this.saveGameState();
-      await this.syncToD1();
-      await this.updateRoomStatus('finished');
-
-      // 記錄遊戲結果
-      await this.recordGameResult();
+    // 逾時者必須確實是這場對局的其中一方，否則不應判定勝負
+    const leaverSlot = this.findPlayerSlot(userId);
+    if (!leaverSlot) {
+      console.log(`逾時的 ${userId} 不在對局中，忽略`);
+      return;
     }
 
-    // 清除計時器
-    this.playerLeaveTimers.delete(userId);
+    // 若該玩家已重新連線，就不結束遊戲
+    if ([...this.sessions.values()].some(s => s.userId === userId)) {
+      console.log(`玩家 ${userId} 已重新連線，取消逾時判定`);
+      return;
+    }
+
+    const opponentPlayer = GameLogic.getOpponent(leaverSlot);
+    const winnerUserId = opponentPlayer
+      ? this.gameState.players[opponentPlayer]
+      : undefined;
+
+    if (!winnerUserId || !opponentPlayer) {
+      return;
+    }
+
+    this.gameState.winner = opponentPlayer;
+    this.gameState.status = 'finished';
+    this.gameState.updatedAt = Date.now();
+
+    // 廣播遊戲結束
+    this.broadcast({
+      type: 'gameEnd',
+      data: {
+        gameState: this.gameState,
+        reason: 'opponentTimeout',
+        message: `Player ${userId} disconnected. ${winnerUserId} wins by timeout.`
+      },
+      timestamp: Date.now(),
+    });
+
+    // 保存遊戲狀態
+    await this.saveGameState();
+    await this.syncToD1();
+    await this.updateRoomStatus('finished');
+
+    // 記錄遊戲結果
+    await this.finalizeGame();
   }
 
   /**
@@ -638,10 +764,15 @@ export class GameRoom {
    */
   private handleChat(
     webSocket: WebSocket,
-    chatData: { message: string }
+    chatData: { message?: unknown }
   ): void {
     const session = this.sessions.get(webSocket);
     if (!session) return;
+
+    const message =
+      typeof chatData?.message === 'string' ? chatData.message.trim() : '';
+
+    if (!message) return;
 
     // 更新活動時間
     this.updateActivity();
@@ -651,7 +782,7 @@ export class GameRoom {
         type: 'chat',
         data: {
           userId: session.userId,
-          message: chatData.message,
+          message: message.slice(0, 500),
           timestamp: Date.now(),
         },
         timestamp: Date.now(),
@@ -665,7 +796,12 @@ export class GameRoom {
    */
   private async handleDrawRequest(webSocket: WebSocket): Promise<void> {
     const session = this.sessions.get(webSocket);
-    if (!session || !this.gameState || this.gameState.mode !== 'pvp') {
+    if (
+      !session ||
+      !session.player ||
+      !this.gameState ||
+      this.gameState.mode !== 'pvp'
+    ) {
       console.log('和棋請求被拒絕：', { 
         hasSession: !!session, 
         hasGameState: !!this.gameState, 
@@ -708,7 +844,12 @@ export class GameRoom {
    */
   private async handleDrawResponse(webSocket: WebSocket, data: { accept: boolean }): Promise<void> {
     const session = this.sessions.get(webSocket);
-    if (!session || !this.gameState || this.gameState.mode !== 'pvp') {
+    if (
+      !session ||
+      !session.player ||
+      !this.gameState ||
+      this.gameState.mode !== 'pvp'
+    ) {
       console.log('和棋回應被拒絕：', { 
         hasSession: !!session, 
         hasGameState: !!this.gameState, 
@@ -728,7 +869,7 @@ export class GameRoom {
       await this.saveGameState();
       await this.syncToD1();
       await this.updateRoomStatus('finished');
-      await this.recordGameResult();
+      await this.finalizeGame();
 
       // 廣播遊戲結束
       this.broadcast(
@@ -1037,6 +1178,13 @@ export class GameRoom {
       console.log('本地存儲中沒有房間代碼');
     }
 
+    // 活動時間以 storage 為準：實例是因 alarm 才被重建時，
+    // 建構子裡的 Date.now() 會讓閒置判定重新計時，房間就永遠清不掉
+    const storedActivity = await this.state.storage.get('lastActivity');
+    if (typeof storedActivity === 'number') {
+      this.lastActivityTime = storedActivity;
+    }
+
     // 如果本地沒有狀態但提供了房間代碼，從 D1 資料庫載入
     if (!this.gameState && roomCode && this.env.DB) {
       try {
@@ -1140,119 +1288,73 @@ export class GameRoom {
   }
 
   /**
-   * 保存遊戲記錄到 D1 資料庫
+   * 結算對局：寫入戰績、更新評分、標記遊戲結束
+   *
+   * 這是唯一的結算入口。原本落子、和棋、逾時各走不同實作，
+   * 兩份邏輯都會寫 game_records 並加減評分，只要有兩條路徑同時觸發就會重複計分。
+   * 以 storage 的 recorded 旗標確保每場對局只結算一次。
    */
-  private async saveGameRecord(): Promise<void> {
+  private async finalizeGame(): Promise<void> {
     if (!this.gameState || this.gameState.status !== 'finished') return;
 
+    const recordedFor = await this.state.storage.get('recordedGameId');
+    if (recordedFor === this.gameState.id) {
+      console.log(`對局 ${this.gameState.id} 已結算過，略過`);
+      return;
+    }
+
     try {
-      console.log('開始保存遊戲記錄:', this.gameState.id);
+      await this.state.storage.put('recordedGameId', this.gameState.id);
 
-      const gameDuration = this.gameState.updatedAt - this.gameState.createdAt;
+      const gameDuration = Math.max(
+        0,
+        this.gameState.updatedAt - this.gameState.createdAt
+      );
+      const isDraw = this.gameState.winner === 'draw';
 
-      // 為每個玩家創建遊戲記錄
-      const players = [
-        { id: this.gameState.players.black, color: 'black' },
-        { id: this.gameState.players.white, color: 'white' },
-      ].filter(p => p.id); // 過濾掉空的玩家
+      const seats = (['black', 'white'] as const)
+        .map(color => ({ color, id: this.gameState!.players[color] }))
+        .filter((seat): seat is { color: 'black' | 'white'; id: string } =>
+          Boolean(seat.id)
+        );
 
-      for (const player of players) {
-        if (!player.id) continue;
+      if (seats.length === 0) {
+        console.log('沒有可結算的玩家');
+        return;
+      }
 
-        // 檢查用戶是否存在，如果不存在則創建
-        let userExists = await this.env.DB.prepare(
-          `
-          SELECT id FROM users WHERE id = ?1
-        `
+      // 先確保所有玩家都存在，並取得目前評分
+      const ratings = new Map<string, number>();
+      for (const seat of seats) {
+        await this.ensureUserExists(seat.id);
+        const row = await this.env.DB.prepare(
+          `SELECT rating FROM users WHERE id = ?1`
         )
-          .bind(player.id)
+          .bind(seat.id)
           .first();
+        ratings.set(seat.id, (row?.rating as number) ?? 1200);
+      }
 
-        if (!userExists) {
-          console.log(`用戶 ${player.id} 不存在，正在創建...`);
-          // 創建新用戶
-          await this.env.DB.prepare(
-            `
-            INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
-            VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
-          `
-          )
-            .bind(
-              player.id,
-              `匿名玩家_${player.id.slice(-6)}`, // 生成用戶名
-              Date.now(),
-              Date.now()
-            )
-            .run();
-          console.log(`已創建用戶: ${player.id}`);
-        }
+      for (const seat of seats) {
+        const opponent = seats.find(other => other.id !== seat.id);
+        const rating = ratings.get(seat.id) ?? 1200;
 
-        // 確定遊戲結果
-        let result: 'win' | 'loss' | 'draw';
-        if (this.gameState.winner === 'draw') {
-          result = 'draw';
-        } else if (this.gameState.winner === player.color) {
-          result = 'win';
-        } else {
-          result = 'loss';
-        }
+        const result: 'win' | 'loss' | 'draw' = isDraw
+          ? 'draw'
+          : this.gameState.winner === seat.color
+            ? 'win'
+            : 'loss';
 
-        // 獲取玩家當前評分
-        const userResult = await this.env.DB.prepare(
-          `
-          SELECT rating FROM users WHERE id = ?1
-        `
-        )
-          .bind(player.id)
-          .first();
+        const ratingChange = this.calculateRatingChange(
+          rating,
+          opponent ? (ratings.get(opponent.id) ?? 1200) : null,
+          result
+        );
 
-        const currentRating = (userResult?.rating as number) || 1200;
-
-        // 計算評分變化（簡化版 ELO）
-        let ratingChange = 0;
-        if (result === 'win') {
-          ratingChange = 25;
-        } else if (result === 'loss') {
-          ratingChange = -15;
-        } else {
-          ratingChange = 0;
-        }
-
-        // 獲取對手 ID，確保對手也存在
-        const opponentId = players.find(p => p.id !== player.id)?.id;
-        if (opponentId) {
-          const opponentExists = await this.env.DB.prepare(
-            `
-            SELECT id FROM users WHERE id = ?1
-          `
-          )
-            .bind(opponentId)
-            .first();
-
-          if (!opponentExists) {
-            console.log(`對手 ${opponentId} 不存在，正在創建...`);
-            await this.env.DB.prepare(
-              `
-              INSERT INTO users (id, username, wins, losses, draws, rating, created_at, updated_at)
-              VALUES (?1, ?2, 0, 0, 0, 1200, ?3, ?4)
-            `
-            )
-              .bind(
-                opponentId,
-                `匿名玩家_${opponentId.slice(-6)}`,
-                Date.now(),
-                Date.now()
-              )
-              .run();
-            console.log(`已創建對手: ${opponentId}`);
-          }
-        }
-
-        // 保存遊戲記錄
         await this.env.DB.prepare(
           `
           INSERT INTO game_records (
-            id, game_id, user_id, opponent_id, mode, result, 
+            id, game_id, user_id, opponent_id, mode, result,
             moves, duration, rating, rating_change, created_at
           ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         `
@@ -1260,61 +1362,86 @@ export class GameRoom {
           .bind(
             crypto.randomUUID(),
             this.gameState.id,
-            player.id,
-            opponentId || null,
+            seat.id,
+            opponent?.id ?? null,
             this.gameState.mode,
             result,
             JSON.stringify(this.gameState.moves),
             gameDuration,
-            currentRating,
+            rating,
             ratingChange,
             Date.now()
           )
           .run();
 
-        // 更新用戶戰績
-        const updateQuery =
-          result === 'win'
-            ? `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
-            : result === 'loss'
-              ? `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
-              : `UPDATE users SET draws = draws + 1, updated_at = ?2 WHERE id = ?3`;
+        const column =
+          result === 'win' ? 'wins' : result === 'loss' ? 'losses' : 'draws';
 
-        if (result === 'draw') {
-          await this.env.DB.prepare(updateQuery)
-            .bind(Date.now(), player.id)
-            .run();
-        } else {
-          await this.env.DB.prepare(updateQuery)
-            .bind(ratingChange, Date.now(), player.id)
-            .run();
-        }
+        await this.env.DB.prepare(
+          `UPDATE users
+             SET ${column} = ${column} + 1,
+                 rating = MAX(0, rating + ?1),
+                 updated_at = ?2
+           WHERE id = ?3`
+        )
+          .bind(ratingChange, Date.now(), seat.id)
+          .run();
 
         console.log(
-          `已更新玩家 ${player.id} 的戰績: ${result}, 評分變化: ${ratingChange}`
+          `已更新玩家 ${seat.id} 的戰績: ${result}, 評分變化: ${ratingChange}`
         );
       }
 
-      // 更新遊戲狀態為已完成
       await this.env.DB.prepare(
-        `
-        UPDATE games SET status = 'finished', winner = ?1, updated_at = ?2 WHERE id = ?3
-      `
+        `UPDATE games SET status = 'finished', winner = ?1, updated_at = ?2 WHERE id = ?3`
       )
         .bind(this.gameState.winner, Date.now(), this.gameState.id)
         .run();
 
-      console.log('遊戲記錄保存完成');
+      console.log(`對局結算完成: ${this.gameState.id}`);
     } catch (error) {
-      console.error('保存遊戲記錄失敗:', error);
+      // 結算失敗時清掉旗標，讓之後仍有機會補記錄
+      await this.state.storage.delete('recordedGameId');
+      console.error('結算對局失敗:', error);
     }
   }
 
   /**
+   * 標準 ELO 評分變化；對手為 AI（無對手評分）時採固定值
+   */
+  private calculateRatingChange(
+    playerRating: number,
+    opponentRating: number | null,
+    result: 'win' | 'loss' | 'draw'
+  ): number {
+    if (opponentRating === null) {
+      return result === 'win' ? 20 : result === 'loss' ? -10 : 0;
+    }
+
+    const expected =
+      1 / (1 + Math.pow(10, (opponentRating - playerRating) / 400));
+    const actual = result === 'win' ? 1 : result === 'loss' ? 0 : 0.5;
+
+    return Math.round(32 * (actual - expected));
+  }
+
+  /**
    * 更新活動時間
+   *
+   * 時間必須落到 storage，否則 Durable Object 被回收後閒置判定會從頭算起。
    */
   private updateActivity(): void {
     this.lastActivityTime = Date.now();
+    this.state.waitUntil(this.persistActivity());
+  }
+
+  private async persistActivity(): Promise<void> {
+    try {
+      await this.state.storage.put('lastActivity', this.lastActivityTime);
+      await this.scheduleNextAlarm();
+    } catch (error) {
+      console.error('更新活動時間失敗:', error);
+    }
   }
 
   /**
@@ -1365,45 +1492,6 @@ export class GameRoom {
 
     // 更新房間狀態
     await this.updateRoomStatus('waiting');
-  }
-
-  /**
-   * 開始清理計時器
-   */
-  private startCleanupTimer(): void {
-    if (this.cleanupTimer) {
-      clearTimeout(this.cleanupTimer);
-    }
-
-    this.cleanupTimer = setTimeout(() => {
-      this.checkAndCleanup();
-    }, this.CLEANUP_CHECK_INTERVAL);
-  }
-
-  /**
-   * 檢查並清理閒置房間
-   */
-  private async checkAndCleanup(): Promise<void> {
-    const now = Date.now();
-    const timeSinceLastActivity = now - this.lastActivityTime;
-
-    console.log(
-      `檢查房間 ${this.roomCode} 清理條件: 無活動時間=${timeSinceLastActivity}ms, 會話數=${this.sessions.size}`
-    );
-
-    // 如果房間無活動超過設定時間且沒有會話，則清理
-    if (
-      timeSinceLastActivity > this.INACTIVE_TIMEOUT &&
-      this.sessions.size === 0
-    ) {
-      console.log(
-        `房間 ${this.roomCode} 已閒置超過 ${this.INACTIVE_TIMEOUT}ms，開始清理`
-      );
-      await this.cleanupRoom();
-    } else {
-      // 重新設置計時器
-      this.startCleanupTimer();
-    }
   }
 
   /**
@@ -1519,131 +1607,6 @@ export class GameRoom {
   async forceCleanup(): Promise<void> {
     console.log(`手動觸發房間 ${this.roomCode} 清理`);
     await this.cleanupRoom();
-  }
-
-  /**
-   * 記錄遊戲結果並計算評分
-   */
-  private async recordGameResult(): Promise<void> {
-    if (!this.gameState || this.gameState.status !== 'finished') {
-      return;
-    }
-
-    try {
-      console.log(`開始記錄遊戲結果: ${this.gameState.id}`);
-      
-      // 獲取兩個玩家的用戶信息
-      const players = [];
-      for (const [playerType, userId] of Object.entries(this.gameState.players)) {
-        if (userId) {
-          const userResult = await this.env.DB.prepare(
-            `SELECT id, rating FROM users WHERE id = ?1`
-          ).bind(userId).first();
-          
-          if (userResult) {
-            players.push({
-              id: userResult.id as string,
-              rating: userResult.rating as number,
-              playerType: playerType as 'black' | 'white'
-            });
-          }
-        }
-      }
-
-      if (players.length < 2) {
-        console.log('玩家數量不足，跳過評分計算');
-        return;
-      }
-
-      const gameDuration = this.gameState.updatedAt - this.gameState.createdAt;
-
-      // 為每個玩家計算結果和評分變化
-      for (const player of players) {
-        let result: 'win' | 'loss' | 'draw';
-        let ratingChange = 0;
-
-        if (this.gameState.winner === 'draw' || this.gameState.result === 'draw') {
-          result = 'draw';
-          ratingChange = 0;
-        } else if (this.gameState.winner === player.playerType) {
-          result = 'win';
-          // 戰勝對手獲得評分，根據對手評分調整
-          const opponent = players.find(p => p.id !== player.id);
-          if (opponent) {
-            const ratingDiff = opponent.rating - player.rating;
-            if (ratingDiff > 0) {
-              ratingChange = Math.min(30, 15 + Math.floor(ratingDiff / 50)); // 對手更強，獲得更多評分
-            } else {
-              ratingChange = Math.max(10, 15 + Math.floor(ratingDiff / 50)); // 對手較弱，獲得較少評分
-            }
-          } else {
-            ratingChange = 15; // 預設評分變化
-          }
-        } else {
-          result = 'loss';
-          // 敗給對手扣除評分，根據對手評分調整
-          const opponent = players.find(p => p.id !== player.id);
-          if (opponent) {
-            const ratingDiff = opponent.rating - player.rating;
-            if (ratingDiff > 0) {
-              ratingChange = Math.max(-10, -15 + Math.floor(ratingDiff / 100)); // 對手更強，扣除較少評分
-            } else {
-              ratingChange = Math.min(-20, -15 + Math.floor(ratingDiff / 100)); // 對手較弱，扣除較多評分
-            }
-          } else {
-            ratingChange = -15; // 預設評分變化
-          }
-        }
-
-        // 保存遊戲記錄
-        await this.env.DB.prepare(`
-          INSERT INTO game_records (
-            id, game_id, user_id, opponent_id, mode, result, 
-            moves, duration, rating, rating_change, created_at
-          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-        `)
-          .bind(
-            crypto.randomUUID(),
-            this.gameState.id,
-            player.id,
-            players.find(p => p.id !== player.id)?.id || null,
-            this.gameState.mode,
-            result,
-            JSON.stringify(this.gameState.moves),
-            gameDuration,
-            player.rating,
-            ratingChange,
-            Date.now()
-          )
-          .run();
-
-        // 更新用戶戰績
-        const updateQuery =
-          result === 'win'
-            ? `UPDATE users SET wins = wins + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
-            : result === 'loss'
-              ? `UPDATE users SET losses = losses + 1, rating = rating + ?1, updated_at = ?2 WHERE id = ?3`
-              : `UPDATE users SET draws = draws + 1, updated_at = ?2 WHERE id = ?3`;
-
-        if (result === 'draw') {
-          await this.env.DB.prepare(updateQuery)
-            .bind(Date.now(), player.id)
-            .run();
-        } else {
-          await this.env.DB.prepare(updateQuery)
-            .bind(ratingChange, Date.now(), player.id)
-            .run();
-        }
-
-        console.log(
-          `已更新玩家 ${player.id} 的戰績: ${result}, 評分變化: ${ratingChange}`
-        );
-      }
-
-      console.log(`遊戲結果和評分計算完成: ${this.gameState.id}`);
-    } catch (error) {
-      console.error('記錄遊戲結果和計算評分時發生錯誤:', error);
-    }
   }
 
   /**

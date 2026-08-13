@@ -22,6 +22,9 @@ export interface TrainingGame {
   trainingValue: number; // 0-1, 表示這局遊戲的學習價值
 }
 
+/** 自我訓練的背景執行時間上限 */
+const TRAINING_TIME_BUDGET_MS = 25 * 1000;
+
 export interface TrainingSession {
   id: string;
   games: TrainingGame[];
@@ -73,17 +76,26 @@ export class SelfTrainingService {
    * 執行自我對戰會話
    */
   private async executeSelfPlaySession(
-    session: TrainingSession, 
+    session: TrainingSession,
     difficulty: 'easy' | 'medium' | 'hard'
   ): Promise<void> {
     const maxGames = difficulty === 'easy' ? 10 : difficulty === 'medium' ? 20 : 50;
+    // Worker 的背景執行時間有限，超出預算就收工，讓已完成的部分能正常存檔
+    const deadline = session.startTime + TRAINING_TIME_BUDGET_MS;
     let wins = 0;
     let totalQuality = 0;
 
     for (let gameIndex = 0; gameIndex < maxGames; gameIndex++) {
+      if (Date.now() > deadline) {
+        console.log(
+          `[SelfTraining] 已達時間預算，於第 ${gameIndex + 1} 局前提早結束`
+        );
+        break;
+      }
+
       try {
         console.log(`[SelfTraining] 進行第 ${gameIndex + 1}/${maxGames} 局自我對戰`);
-        
+
         const game = await this.playSelfGame(gameIndex, difficulty);
         session.games.push(game);
         session.totalGames++;
@@ -95,17 +107,15 @@ export class SelfTrainingService {
         if ((gameIndex + 1) % 5 === 0) {
           await this.storeLearningData(session.games.slice(-5));
         }
-
-        // 避免過度負載
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
       } catch (error) {
         console.error(`[SelfTraining] 第 ${gameIndex + 1} 局對戰失敗:`, error);
       }
     }
 
-    session.winRate = wins / session.totalGames;
-    session.averageQuality = totalQuality / session.totalGames;
+    // 一局都沒完成時避免除以 0 產生 NaN
+    session.winRate = session.totalGames > 0 ? wins / session.totalGames : 0;
+    session.averageQuality =
+      session.totalGames > 0 ? totalQuality / session.totalGames : 0;
   }
 
   /**

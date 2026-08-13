@@ -300,7 +300,7 @@ export function detectLanguage(request: Request): string {
     .map(lang => {
       const [locale, qValue] = lang.trim().split(';q=');
       const quality = qValue ? parseFloat(qValue) : 1.0;
-      return { locale: locale.toLowerCase(), quality };
+      return { locale: (locale ?? '').toLowerCase(), quality };
     })
     .sort((a, b) => b.quality - a.quality);
   
@@ -321,7 +321,7 @@ export function detectLanguage(request: Request): string {
 }
 
 export function getTranslations(language: string): Translations {
-  return translations[language] || translations['en'];
+  return translations[language] ?? (translations['en'] as Translations);
 }
 
 export function t(key: keyof Translations, language: string = 'zh-TW'): string {

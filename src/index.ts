@@ -11,28 +11,30 @@ import { handleAdminAPI } from './handlers/admin';
 import { handleStartAITraining, handleGetTrainingStats } from './handlers/aiTraining';
 import { serveStaticAssets } from './handlers/static';
 import { handleHourlyCleanup } from './handlers/cron';
-import { corsHeaders } from './utils/cors';
+import { corsHeaders, withCors } from './utils/cors';
+import { requireAdmin } from './utils/auth';
 
 export { GameRoom } from './durable-objects/GameRoom';
 
 // AI 訓練 API 處理器
-async function handleAITrainingAPI(request: Request, env: Env): Promise<Response> {
+async function handleAITrainingAPI(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext
+): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/ai-training', '');
 
-  // 認證檢查（可選）
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: '需要認證' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
+  // 自我訓練會大量消耗 Workers AI 額度，必須是管理員才能觸發
+  const unauthorized = await requireAdmin(request, env, corsHeaders);
+  if (unauthorized) {
+    return unauthorized;
   }
 
   switch (request.method) {
     case 'POST':
       if (path === '/start') {
-        return await handleStartAITraining(request, env);
+        return await handleStartAITraining(request, env, ctx);
       }
       break;
 
@@ -77,50 +79,50 @@ export default {
 
     // 處理 CORS 預檢請求
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 200,
-        headers: corsHeaders,
-      });
+      return withCors(
+        new Response(null, { status: 204, headers: corsHeaders }),
+        request,
+        env
+      );
     }
 
     try {
       // API 路由
       if (path.startsWith('/api/game')) {
-        return await handleGameAPI(request, env, ctx);
+        return withCors(await handleGameAPI(request, env, ctx), request, env);
       }
 
       if (path.startsWith('/api/user')) {
-        return await handleUserAPI(request, env, ctx);
+        return withCors(await handleUserAPI(request, env, ctx), request, env);
       }
 
       if (path.startsWith('/api/room')) {
-        return await handleRoomAPI(request, env, ctx);
+        return withCors(await handleRoomAPI(request, env, ctx), request, env);
       }
 
       if (path.startsWith('/api/admin')) {
-        return await handleAdminAPI(request, env);
+        return withCors(await handleAdminAPI(request, env, ctx), request, env);
       }
 
       if (path.startsWith('/api/ai-training')) {
-        return await handleAITrainingAPI(request, env);
+        return withCors(await handleAITrainingAPI(request, env, ctx), request, env);
       }
 
       // 靜態資源和前端頁面
       return await serveStaticAssets(request, env);
     } catch (error) {
+      // 對外只回傳通用訊息，詳細內容留在日誌，避免洩漏內部結構
       console.error('處理請求時發生錯誤:', error);
-      return new Response(
-        JSON.stringify({
-          error: '伺服器內部錯誤',
-          message: error instanceof Error ? error.message : '未知錯誤',
-        }),
-        {
+      return withCors(
+        new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
           status: 500,
           headers: {
             'Content-Type': 'application/json',
             ...corsHeaders,
           },
-        }
+        }),
+        request,
+        env
       );
     }
   },

@@ -7,7 +7,10 @@ export interface Env {
   VECTORIZE: VectorizeIndex;
   DB: D1Database;
   GAME_ROOM: DurableObjectNamespace;
+  /** 由 `wrangler secret put JWT_SECRET` 設定；未設定時所有需登入的端點會直接失敗 */
   JWT_SECRET?: string;
+  /** 逗號分隔的跨域來源白名單，未設定時只允許同源 */
+  ALLOWED_ORIGINS?: string;
   gomoku_admin: KVNamespace;
 }
 

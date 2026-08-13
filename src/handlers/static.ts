@@ -5,6 +5,34 @@
 import { Env } from '../types';
 import { detectLanguage, getTranslations, Translations } from '../utils/i18n';
 
+/**
+ * 前端頁面共用的安全標頭
+ *
+ * script-src 仍需 'unsafe-inline'，因為版面大量使用 onclick 屬性；
+ * 但 connect-src/img-src 限制在同源，可阻斷注入腳本把 token 送往外部網域。
+ */
+const SECURITY_HEADERS: Record<string, string> = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; '),
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
+function documentResponse(body: string, contentType: string): Response {
+  return new Response(body, {
+    headers: { 'Content-Type': contentType, ...SECURITY_HEADERS },
+  });
+}
+
 export async function serveStaticAssets(
   request: Request,
   _env: Env
@@ -13,43 +41,33 @@ export async function serveStaticAssets(
   const path = url.pathname;
   const language = detectLanguage(request);
   const t = getTranslations(language);
+  const html = 'text/html; charset=utf-8';
 
   // 根據路徑返回對應的靜態資源
   switch (path) {
     case '/':
-      return new Response(getIndexHTML(t, language), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return documentResponse(getIndexHTML(t, language), html);
 
     case '/game':
-      return new Response(getGameHTML(t, language), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return documentResponse(getGameHTML(t, language), html);
 
     case '/room':
-      return new Response(getRoomHTML(t, language), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return documentResponse(getRoomHTML(t, language), html);
 
     case '/profile':
-      return new Response(getProfileHTML(t, language), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return documentResponse(getProfileHTML(t, language), html);
 
     case '/leaderboard':
-      return new Response(getLeaderboardHTML(t, language), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      return documentResponse(getLeaderboardHTML(t, language), html);
 
     case '/app.js':
-      return new Response(getAppJS(t, language), {
-        headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
-      });
+      return documentResponse(
+        getAppJS(t, language),
+        'application/javascript; charset=utf-8'
+      );
 
     case '/styles.css':
-      return new Response(getStylesCSS(), {
-        headers: { 'Content-Type': 'text/css; charset=utf-8' },
-      });
+      return documentResponse(getStylesCSS(), 'text/css; charset=utf-8');
 
     case '/favicon.ico':
       return new Response('', { status: 204 });
@@ -3144,6 +3162,18 @@ function t(key) {
     return translations[key] || key;
 }
 
+// 任何來自使用者的字串（暱稱、聊天內容、房間代碼）寫進 innerHTML 前都必須經過這裡，
+// 否則對手只要送出一段 <img onerror=...> 就能在別人的瀏覽器竊取 localStorage 的 token
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function updateUIText() {
     // 更新個人資料卡片
     const profileDescription = document.getElementById('profile-description');
@@ -3444,7 +3474,10 @@ class GomokuGame {
     connectToRoom(roomCode) {
         // WebSocket 連接邏輯
         const userId = this.getCurrentUserId();
-        const wsUrl = \`wss://\${window.location.host}/api/room/\${roomCode}/websocket?userId=\${userId}\`;
+        // 已登入的帳號要帶上 token，伺服器才能確認連線者確實是本人
+        const authToken = localStorage.getItem('authToken');
+        const tokenParam = authToken ? \`&token=\${encodeURIComponent(authToken)}\` : '';
+        const wsUrl = \`wss://\${window.location.host}/api/room/\${encodeURIComponent(roomCode)}/websocket?userId=\${encodeURIComponent(userId)}\${tokenParam}\`;
         
         console.log('WebSocket 連接 URL:', wsUrl);
         console.log('房間代碼:', roomCode, '用戶ID:', userId);
@@ -3698,18 +3731,18 @@ class GomokuGame {
             if (chatData.isSystem || chatData.userId === 'system') {
                 messageEl.className = 'chat-message system-message';
                 messageEl.innerHTML = \`
-                    <span class="chat-text system-text">\${chatData.message}</span>
+                    <span class="chat-text system-text">\${escapeHtml(chatData.message)}</span>
                 \`;
             } else {
                 messageEl.className = 'chat-message';
                 // 統一格式化用戶ID顯示
-                const displayUserId = chatData.userId.startsWith('Anonymous_') ? 
-                    chatData.userId : 
+                const displayUserId = chatData.userId.startsWith('Anonymous_') ?
+                    chatData.userId :
                     \`\${currentLanguage === 'zh-TW' ? '玩家' : 'Player'} \${chatData.userId.slice(-6)}\`;
-                
+
                 messageEl.innerHTML = \`
-                    <span class="chat-user">\${displayUserId}:</span>
-                    <span class="chat-text">\${chatData.message}</span>
+                    <span class="chat-user">\${escapeHtml(displayUserId)}:</span>
+                    <span class="chat-text">\${escapeHtml(chatData.message)}</span>
                 \`;
             }
             
@@ -3867,10 +3900,12 @@ class GomokuGame {
         modal.className = 'modal';
         modal.style.display = 'flex';
         
-        const playerName = fromUserId.startsWith('Anonymous_') 
-            ? fromUserId 
-            : (currentLanguage === 'zh-TW' ? '玩家' : 'Player') + ' ' + fromUserId.slice(-6);
-        
+        const playerName = escapeHtml(
+            fromUserId.startsWith('Anonymous_')
+                ? fromUserId
+                : (currentLanguage === 'zh-TW' ? '玩家' : 'Player') + ' ' + fromUserId.slice(-6)
+        );
+
         modal.innerHTML = 
             '<div class="modal-content draw-confirm-content">' +
                 '<div class="draw-confirm-header">' +
@@ -4004,7 +4039,7 @@ class GomokuGame {
                 <span>🎉</span>
                 <div>
                     <div style="font-weight: 600;">\${currentLanguage === 'zh-TW' ? '房間創建成功！' : 'Room created successfully!'}</div>
-                    <div style="font-size: 0.9rem; opacity: 0.9;">\${currentLanguage === 'zh-TW' ? '房間代碼' : 'Room Code'}: \${roomCode}</div>
+                    <div style="font-size: 0.9rem; opacity: 0.9;">\${currentLanguage === 'zh-TW' ? '房間代碼' : 'Room Code'}: \${escapeHtml(roomCode)}</div>
                     <div style="font-size: 0.8rem; opacity: 0.8;">\${currentLanguage === 'zh-TW' ? '您已自動加入房間' : 'You have automatically joined the room'}</div>
                 </div>
             </div>
@@ -4108,7 +4143,8 @@ class GomokuGame {
                 body: JSON.stringify({
                     gameId: this.gameState.id,
                     position: { row, col },
-                    player: this.myPlayer
+                    player: this.myPlayer,
+                    userId: this.getCurrentUserId()
                 })
             });
             
@@ -4144,7 +4180,8 @@ class GomokuGame {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     gameId: this.gameState.id,
-                    difficulty: this.aiDifficulty
+                    difficulty: this.aiDifficulty,
+                    userId: this.getCurrentUserId()
                 })
             });
             
@@ -4768,7 +4805,7 @@ class GomokuGame {
         if (user) {
             // 已登入用戶
             profileDescription.innerHTML = \`
-                <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${user.username}</strong>！</p>
+                <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${escapeHtml(user.username)}</strong>！</p>
                 <div class="user-stats">
                     <p>\${currentLanguage === 'zh-TW' ? '評分：' : 'Rating:'}<strong>\${user.rating}</strong></p>
                     <p>勝率：<strong>\${user.wins + user.losses + user.draws > 0 ? 
@@ -4862,7 +4899,7 @@ class GomokuGame {
         
         historyEl.innerHTML = history.map(game => \`
             <div class="history-item">
-                <div class="game-result \${game.result}">
+                <div class="game-result \${escapeHtml(game.result)}">
                     \${game.result === 'win' ? (currentLanguage === 'zh-TW' ? '勝利' : 'Win') : game.result === 'loss' ? (currentLanguage === 'zh-TW' ? '失敗' : 'Loss') : (currentLanguage === 'zh-TW' ? '平局' : 'Draw')}
                 </div>
                 <div class="game-details">
@@ -4964,10 +5001,10 @@ class GomokuGame {
         tbody.innerHTML = leaderboard.map((user, index) => \`
             <tr>
                 <td>\${index + 1}</td>
-                <td>\${user.username}</td>
-                <td>\${user.rating}</td>
-                <td>\${user.wins}</td>
-                <td>\${user.losses}</td>
+                <td>\${escapeHtml(user.username)}</td>
+                <td>\${Number(user.rating)}</td>
+                <td>\${Number(user.wins)}</td>
+                <td>\${Number(user.losses)}</td>
                 <td>\${user.wins + user.losses + user.draws > 0 ? 
                     ((user.wins / (user.wins + user.losses + user.draws)) * 100).toFixed(1) + '%' : '0%'}</td>
             </tr>
@@ -5046,7 +5083,7 @@ function updateProfileCardDirectly(user) {
     if (user) {
         // 已登入用戶
         profileDescription.innerHTML = \`
-            <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${user.username}</strong>！</p>
+            <p>\${currentLanguage === 'zh-TW' ? '歡迎回來' : 'Welcome back'}，<strong>\${escapeHtml(user.username)}</strong>！</p>
             <div class="user-stats">
                 <p>\${currentLanguage === 'zh-TW' ? '評分：' : 'Rating:'}<strong>\${user.rating}</strong></p>
                 <p>\${currentLanguage === 'zh-TW' ? '勝率：' : 'Win Rate:'}<strong>\${user.wins + user.losses + user.draws > 0 ? 

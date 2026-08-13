@@ -120,7 +120,7 @@ export class VectorizeService {
         };
       }
 
-      // 分析相似局面中的下一步走法
+      // 分析相似局面中實際的下一步走法
       const moveFrequency = new Map<
         string,
         { count: number; positions: Position[] }
@@ -128,9 +128,10 @@ export class VectorizeService {
       const reasoning: string[] = [];
 
       for (const similar of similarGames) {
-        // 這裡需要從資料庫獲取完整的遊戲記錄
-        // 暫時使用模擬數據
-        const nextMoves = this.simulateNextMovesFromHistory(similar);
+        const nextMoves = await this.getNextMovesFromHistory(
+          similar,
+          gameState
+        );
 
         for (const move of nextMoves) {
           const key = `${move.row},${move.col}`;
@@ -141,6 +142,14 @@ export class VectorizeService {
           entry.count++;
           entry.positions.push(move);
         }
+      }
+
+      if (moveFrequency.size === 0) {
+        console.log(`[Vectorize] 相似局面沒有可用的後續走法`);
+        return {
+          suggestions: [],
+          reasoning: ['相似局面沒有可參考的後續走法'],
+        };
       }
 
       // 排序並選擇最常見的走法
@@ -399,15 +408,21 @@ ${boardString}
         }, 15000);
       });
 
-      const result = await Promise.race([
+      const result = (await Promise.race([
         this.env.AI.run('@cf/baai/bge-m3', {
           text: [text],
         }),
         timeoutPromise
-      ]);
+      ])) as { data?: number[][] };
 
-      console.log(`[Vectorize] 文本嵌入生成完成 - 耗時: ${Date.now() - startTime}ms, 維度: ${result.data[0].length}`);
-      return result.data[0];
+      const embedding = result.data?.[0];
+
+      if (!embedding?.length) {
+        throw new Error('文本嵌入回傳結果為空');
+      }
+
+      console.log(`[Vectorize] 文本嵌入生成完成 - 耗時: ${Date.now() - startTime}ms, 維度: ${embedding.length}`);
+      return embedding;
     } catch (error) {
       const errorTime = Date.now() - startTime;
       console.error(`[Vectorize] 生成文本嵌入失敗 (耗時: ${errorTime}ms):`, error);
@@ -502,53 +517,52 @@ ${boardString}
   }
 
   /**
-   * 模擬從歷史數據獲取下一步走法
+   * 取出相似局面在歷史對局中實際走出的下一步
+   *
+   * 向量的 metadata 記錄了該局面屬於哪一場對局、以及當時已下幾手，
+   * 因此可以回頭查那場對局的棋譜，取出第 moveCount 手作為建議。
+   * 先前這裡是隨機挑空位，等於用亂數污染 AI 評分。
    */
-  private simulateNextMovesFromHistory(similar: GameVector): Position[] {
-    // 這是一個模擬函數，實際應該從 D1 資料庫查詢完整遊戲記錄
-    const suggestions: Position[] = [];
+  private async getNextMovesFromHistory(
+    similar: GameVector,
+    currentState: GameState
+  ): Promise<Position[]> {
+    const { gameId, moveCount } = similar.metadata || {};
 
-    // 基於棋盤狀態和相似度生成更智能的建議
-    const boardState = similar.metadata.boardState;
-    
-    if (boardState) {
-      // 解析棋盤狀態，找到空位
-      const emptyPositions: Position[] = [];
-      const lines = boardState.split('\n');
-      
-      for (let row = 0; row < lines.length && row < GameLogic.BOARD_SIZE; row++) {
-        const line = lines[row];
-        if (line) {
-          for (let col = 0; col < line.length && col < GameLogic.BOARD_SIZE; col++) {
-            if (line[col] === '.') {
-              emptyPositions.push({ row, col });
-            }
-          }
-        }
-      }
-
-      // 如果找到空位，選擇其中一些作為建議
-      if (emptyPositions.length > 0) {
-        const numSuggestions = Math.min(3, emptyPositions.length);
-        for (let i = 0; i < numSuggestions; i++) {
-          const randomIndex = Math.floor(Math.random() * emptyPositions.length);
-          const selectedPosition = emptyPositions[randomIndex];
-          if (selectedPosition) {
-            suggestions.push(selectedPosition);
-            emptyPositions.splice(randomIndex, 1); // 避免重複
-          }
-        }
-      }
-    }
-    
-    // 如果沒有找到足夠的建議，生成隨機位置
-    while (suggestions.length < 3) {
-      suggestions.push({
-        row: Math.floor(Math.random() * GameLogic.BOARD_SIZE),
-        col: Math.floor(Math.random() * GameLogic.BOARD_SIZE),
-      });
+    if (!gameId || typeof moveCount !== 'number') {
+      return [];
     }
 
-    return suggestions;
+    try {
+      const row = await this.env.DB.prepare(
+        `SELECT moves FROM games WHERE id = ?1`
+      )
+        .bind(gameId)
+        .first();
+
+      if (!row?.moves) return [];
+
+      const moves = JSON.parse(row.moves as string) as Array<{
+        position?: Position;
+      }>;
+
+      const next = moves[moveCount]?.position;
+
+      if (
+        !next ||
+        !Number.isInteger(next.row) ||
+        !Number.isInteger(next.col) ||
+        !GameLogic.isValidPosition(next) ||
+        // 該點在目前棋盤已被佔用就沒有參考價值
+        !GameLogic.isEmptyPosition(currentState.board, next)
+      ) {
+        return [];
+      }
+
+      return [next];
+    } catch (error) {
+      console.error(`[Vectorize] 讀取歷史棋譜 ${gameId} 失敗:`, error);
+      return [];
+    }
   }
 }
