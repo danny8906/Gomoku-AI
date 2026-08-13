@@ -334,7 +334,8 @@ ${boardString}
       console.log(`[AI] 調用Llama模型分析棋盤狀態`);
       const llamaStartTime = Date.now();
       
-      const response = await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
+      // Workers AI 的回傳型別是同步/非同步的聯集，這裡固定走同步呼叫
+      const response = (await this.env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
         messages: [
           {
             role: 'system',
@@ -347,7 +348,7 @@ ${boardString}
         ],
         max_tokens: 200,
         temperature: 0.2,
-      });
+      })) as { response?: string };
 
       const llamaTime = Date.now() - llamaStartTime;
       console.log(`[AI] Llama模型分析完成 - 耗時: ${llamaTime}ms`);

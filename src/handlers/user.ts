@@ -5,6 +5,21 @@
 import { Env } from '../types';
 import { UserService } from '../database/UserService';
 import { corsHeaders } from '../utils/cors';
+import { generateJWT, authenticateUser } from '../utils/auth';
+import { hashPassword, verifyPassword } from '../utils/crypto';
+
+/**
+ * 解析並限制清單類參數，避免 NaN 或過大的查詢
+ */
+function parseLimit(raw: string | null, fallback = 10, max = 100): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+
+  return Math.min(parsed, max);
+}
 
 /**
  * 密碼強度驗證
@@ -38,126 +53,6 @@ function validatePassword(password: string): {
   }
 
   return { isValid: true };
-}
-
-/**
- * 生成 JWT token
- */
-async function generateJWT(
-  userId: string,
-  username: string,
-  secret: string
-): Promise<string> {
-  const header = {
-    alg: 'HS256',
-    typ: 'JWT',
-  };
-
-  const payload = {
-    sub: userId,
-    username: username,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 24 * 60 * 60, // 24 小時過期
-  };
-
-  const encodedHeader = btoa(JSON.stringify(header));
-  const encodedPayload = btoa(JSON.stringify(payload));
-
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    ),
-    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`)
-  );
-
-  const encodedSignature = btoa(
-    String.fromCharCode(...new Uint8Array(signature))
-  );
-
-  return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
-}
-
-/**
- * 驗證 JWT token
- */
-async function verifyJWT(
-  token: string,
-  secret: string
-): Promise<{ valid: boolean; payload?: any }> {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      return { valid: false };
-    }
-
-    const [header, payload, signature] = parts;
-
-    // 驗證簽名
-    const expectedSignature = await crypto.subtle.sign(
-      'HMAC',
-      await crypto.subtle.importKey(
-        'raw',
-        new TextEncoder().encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      ),
-      new TextEncoder().encode(`${header}.${payload}`)
-    );
-
-    const expectedSignatureB64 = btoa(
-      String.fromCharCode(...new Uint8Array(expectedSignature))
-    );
-
-    if (signature !== expectedSignatureB64) {
-      return { valid: false };
-    }
-
-    // 解析 payload
-    const decodedPayload = JSON.parse(atob(payload || ''));
-
-    // 檢查過期時間
-    if (decodedPayload.exp < Math.floor(Date.now() / 1000)) {
-      return { valid: false };
-    }
-
-    return { valid: true, payload: decodedPayload };
-  } catch (error) {
-    return { valid: false };
-  }
-}
-
-/**
- * 驗證 JWT token 並獲取用戶信息
- */
-async function authenticateUser(
-  request: Request,
-  env: Env
-): Promise<{ userId: string; username: string } | null> {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token = authHeader.substring(7);
-  const verification = await verifyJWT(
-    token,
-    env.JWT_SECRET || 'default-secret'
-  );
-
-  if (!verification.valid || !verification.payload) {
-    return null;
-  }
-
-  return {
-    userId: verification.payload.sub,
-    username: verification.payload.username,
-  };
 }
 
 export async function handleUserAPI(
@@ -276,25 +171,12 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
       );
     }
 
-    // 簡單的密碼哈希（生產環境應使用更安全的方法）
-    const passwordHash = password
-      ? await crypto.subtle
-          .digest('SHA-256', new TextEncoder().encode(password))
-          .then(buffer =>
-            Array.from(new Uint8Array(buffer))
-              .map(b => b.toString(16).padStart(2, '0'))
-              .join('')
-          )
-      : undefined;
+    const passwordHash = password ? await hashPassword(password) : undefined;
 
     const user = await userService.createUser(username, email, passwordHash);
 
     // 生成 JWT token
-    const token = await generateJWT(
-      user.id,
-      user.username,
-      env.JWT_SECRET || 'default-secret'
-    );
+    const token = await generateJWT(user.id, user.username, env);
 
     return new Response(
       JSON.stringify({
@@ -321,7 +203,6 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '註冊失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -344,88 +225,62 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
       password: string;
     };
 
-    const userService = new UserService(env);
-    const user = await userService.getUserByUsername(username);
-
-    if (!user) {
-      return new Response(
-        JSON.stringify({
-          error: '用戶不存在',
-        }),
-        {
-          status: 404,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
-      );
+    if (!password) {
+      return new Response(JSON.stringify({ error: '請輸入密碼' }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
+      });
     }
 
-    // 密碼驗證
-    if (password) {
-      const passwordHash = await crypto.subtle
-        .digest('SHA-256', new TextEncoder().encode(password))
-        .then(buffer =>
-          Array.from(new Uint8Array(buffer))
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('')
-        );
+    const userService = new UserService(env);
+    const user = await userService.getUserByUsername(username);
+    const userWithPassword = user
+      ? await userService.getUserByUsernameWithPassword(username)
+      : null;
 
-      // 從資料庫獲取用戶的密碼哈希
-      const userWithPassword =
-        await userService.getUserByUsernameWithPassword(username);
-      if (!userWithPassword || !userWithPassword.passwordHash) {
-        return new Response(
-          JSON.stringify({
-            error: '用戶不存在或未設置密碼',
-          }),
-          {
-            status: 404,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders,
-            },
-          }
-        );
+    // 帳號不存在與密碼錯誤回傳同一則訊息，避免被用來列舉帳號
+    const invalidCredentials = new Response(
+      JSON.stringify({ error: '帳號或密碼錯誤' }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
       }
+    );
 
-      // 比較密碼哈希
-      if (passwordHash !== userWithPassword.passwordHash) {
-        return new Response(
-          JSON.stringify({
-            error: '密碼錯誤',
-          }),
-          {
-            status: 401,
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders,
-            },
-          }
+    if (!user || !userWithPassword?.passwordHash) {
+      return invalidCredentials;
+    }
+
+    const { valid, needsUpgrade } = await verifyPassword(
+      password,
+      userWithPassword.passwordHash
+    );
+
+    if (!valid) {
+      return invalidCredentials;
+    }
+
+    // 舊的無鹽 SHA-256 雜湊在登入成功時就地升級為 PBKDF2
+    if (needsUpgrade) {
+      try {
+        await userService.updateUserPassword(
+          user.id,
+          await hashPassword(password)
         );
+        console.log(`已升級使用者 ${user.id} 的密碼雜湊格式`);
+      } catch (upgradeError) {
+        console.error('升級密碼雜湊失敗:', upgradeError);
       }
-    } else {
-      return new Response(
-        JSON.stringify({
-          error: '請輸入密碼',
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders,
-          },
-        }
-      );
     }
 
     // 生成 JWT token
-    const token = await generateJWT(
-      user.id,
-      user.username,
-      env.JWT_SECRET || 'default-secret'
-    );
+    const token = await generateJWT(user.id, user.username, env);
 
     return new Response(
       JSON.stringify({
@@ -452,7 +307,6 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '登入失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -513,7 +367,6 @@ async function handleGetProfile(userId: string, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取用戶資料失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -535,7 +388,7 @@ async function handleGetLeaderboard(
 ): Promise<Response> {
   try {
     const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get('limit') || '10');
+    const limit = parseLimit(url.searchParams.get('limit'));
 
     const userService = new UserService(env);
     const leaderboard = await userService.getLeaderboard(limit);
@@ -551,7 +404,6 @@ async function handleGetLeaderboard(
     return new Response(
       JSON.stringify({
         error: '獲取排行榜失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -583,7 +435,6 @@ async function handleGetHistory(userId: string, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取遊戲歷史失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -615,7 +466,6 @@ async function handleGetStats(userId: string, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取用戶統計失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -638,7 +488,7 @@ async function handleSearchUsers(
   try {
     const url = new URL(request.url);
     const query = url.searchParams.get('q');
-    const limit = parseInt(url.searchParams.get('limit') || '10');
+    const limit = parseLimit(url.searchParams.get('limit'));
 
     if (!query) {
       return new Response(
@@ -681,7 +531,6 @@ async function handleSearchUsers(
     return new Response(
       JSON.stringify({
         error: '搜索用戶失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -757,7 +606,6 @@ async function handleGetMe(request: Request, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取用戶信息失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -853,15 +701,12 @@ async function handleChangePassword(
     }
 
     // 驗證當前密碼
-    const currentPasswordHash = await crypto.subtle
-      .digest('SHA-256', new TextEncoder().encode(currentPassword))
-      .then(buffer =>
-        Array.from(new Uint8Array(buffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-      );
+    const { valid } = await verifyPassword(
+      currentPassword,
+      userWithPassword.passwordHash
+    );
 
-    if (currentPasswordHash !== userWithPassword.passwordHash) {
+    if (!valid) {
       return new Response(
         JSON.stringify({
           error: '當前密碼錯誤',
@@ -876,17 +721,11 @@ async function handleChangePassword(
       );
     }
 
-    // 生成新密碼哈希
-    const newPasswordHash = await crypto.subtle
-      .digest('SHA-256', new TextEncoder().encode(newPassword))
-      .then(buffer =>
-        Array.from(new Uint8Array(buffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-      );
-
     // 更新密碼
-    await userService.updateUserPassword(auth.userId, newPasswordHash);
+    await userService.updateUserPassword(
+      auth.userId,
+      await hashPassword(newPassword)
+    );
 
     return new Response(
       JSON.stringify({
@@ -904,7 +743,6 @@ async function handleChangePassword(
     return new Response(
       JSON.stringify({
         error: '更改密碼失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,

@@ -181,7 +181,6 @@ async function handleCreateRoom(request: Request, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '創建房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -271,7 +270,6 @@ async function handleJoinRoom(request: Request, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '加入房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -345,7 +343,6 @@ async function handleGetRoom(roomCode: string, env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取房間信息失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -372,13 +369,16 @@ export async function handleWebSocket(
     const gameRoom = env.GAME_ROOM.get(id);
 
     // 轉發 WebSocket 請求，保留查詢參數並添加房間代碼
+    // 用 URL 物件組裝，避免查詢字串為空時拼出 `/websocket&roomCode=...`
     const originalUrl = new URL(request.url);
-    const forwardUrl = `http://localhost/websocket${originalUrl.search}&roomCode=${roomCode}`;
-
-    console.log(`轉發 WebSocket 請求: ${forwardUrl}`);
+    const forwardUrl = new URL('http://localhost/websocket');
+    originalUrl.searchParams.forEach((value, key) => {
+      forwardUrl.searchParams.set(key, value);
+    });
+    forwardUrl.searchParams.set('roomCode', roomCode);
 
     return await gameRoom.fetch(
-      new Request(forwardUrl, {
+      new Request(forwardUrl.toString(), {
         method: request.method,
         headers: request.headers,
       })
@@ -426,7 +426,6 @@ async function handleGetRoomStats(
     return new Response(
       JSON.stringify({
         error: '獲取房間統計失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -475,7 +474,6 @@ async function handleForceCleanup(
     return new Response(
       JSON.stringify({
         error: '觸發房間清理失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,

@@ -83,7 +83,7 @@ export class RoomService {
         gameId: result.game_id as string,
         lastActivity: result.updated_at as number,
         inactiveMinutes: Math.floor(
-          (Date.now() - result.updated_at) / (60 * 1000)
+          (Date.now() - (result.updated_at as number)) / (60 * 1000)
         ),
       }));
     } catch (error) {
@@ -114,8 +114,10 @@ export class RoomService {
         .bind(status, ...roomCodes)
         .run();
 
-      console.log(`已更新 ${result.changes} 個房間狀態為: ${status}`);
-      return result.changes;
+      // D1 把受影響列數放在 meta.changes；讀 result.changes 只會拿到 undefined
+      const changes = result.meta?.changes ?? 0;
+      console.log(`已更新 ${changes} 個房間狀態為: ${status}`);
+      return changes;
     } catch (error) {
       console.error('批量更新房間狀態失敗:', error);
       return 0;
@@ -211,13 +213,10 @@ export class RoomService {
       const totalRooms = (totalResult?.total as number) || 0;
       const idleRooms = (idleResult?.idle as number) || 0;
 
-      const statusCounts = statusResult.results.reduce(
-        (acc, row) => {
-          acc[row.status as string] = row.count as number;
-          return acc;
-        },
-        {} as Record<string, number>
-      );
+      const statusCounts: Record<string, number> = {};
+      for (const row of statusResult.results) {
+        statusCounts[row.status as string] = row.count as number;
+      }
 
       return {
         totalRooms,

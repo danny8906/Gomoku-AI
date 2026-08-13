@@ -5,34 +5,20 @@
 import { Env } from '../types';
 import { corsHeaders } from '../utils/cors';
 import { RoomService } from '../database/RoomService';
-import { verifyAdminPassword, setAdminPassword } from '../utils/auth';
+import { setAdminPassword, requireAdmin } from '../utils/auth';
 import { handleStartAITraining, handleGetTrainingStats } from './aiTraining';
 
 export async function handleAdminAPI(
   request: Request,
-  env: Env
+  env: Env,
+  ctx?: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/admin', '');
 
-  // 認證檢查
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return new Response(JSON.stringify({ error: '需要認證' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
-  }
-
-  const token = authHeader.substring(7); // 移除 'Bearer ' 前綴
-
-  // 驗證管理員密碼
-  const isValid = await verifyAdminPassword(token, env);
-  if (!isValid) {
-    return new Response(JSON.stringify({ error: '無效的認證令牌' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
-    });
+  const unauthorized = await requireAdmin(request, env, corsHeaders);
+  if (unauthorized) {
+    return unauthorized;
   }
 
   const roomService = new RoomService(env);
@@ -73,7 +59,7 @@ export async function handleAdminAPI(
         return handleSetPassword(request, env);
       }
       if (path === '/ai/training/start') {
-        return handleStartAITraining(request, env);
+        return handleStartAITraining(request, env, ctx);
       }
       if (path === '/ai/training/stats') {
         return handleGetTrainingStats(request, env);
@@ -117,7 +103,6 @@ async function handleGetAllRooms(roomService: RoomService): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -156,7 +141,6 @@ async function handleGetActiveRooms(
     return new Response(
       JSON.stringify({
         error: '獲取活躍房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -197,7 +181,6 @@ async function handleGetIdleRooms(
     return new Response(
       JSON.stringify({
         error: '獲取閒置房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -228,7 +211,6 @@ async function handleGetRoomStats(roomService: RoomService): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '獲取房間統計失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -277,7 +259,6 @@ async function handleGetRoomDetails(
     return new Response(
       JSON.stringify({
         error: '獲取房間詳細信息失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -314,7 +295,6 @@ async function handleCleanupRooms(roomService: RoomService): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '清理房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -369,7 +349,6 @@ async function handleCleanupRoom(
     return new Response(
       JSON.stringify({
         error: '清理房間失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -440,7 +419,6 @@ async function handleSetPassword(
     return new Response(
       JSON.stringify({
         error: '設置密碼失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -496,7 +474,6 @@ async function handleClearDatabase(env: Env): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: '清空資料庫失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,

@@ -8,12 +8,45 @@ import { AIEngine } from '../ai/AIEngine';
 import { VectorizeService } from '../ai/VectorizeService';
 import { corsHeaders } from '../utils/cors';
 import { saveAIGameRecord } from './gameRecord';
-import { detectLanguage, getTranslations } from '../utils/i18n';
+import { detectLanguage, getTranslations, Translations } from '../utils/i18n';
+import { resolveActor } from '../utils/auth';
+
+function jsonResponse(body: unknown, status: number = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...corsHeaders,
+    },
+  });
+}
+
+/**
+ * 從資料庫列還原遊戲狀態
+ */
+function toGameState(gameData: Record<string, unknown>): GameState {
+  return {
+    id: gameData.id as string,
+    board: JSON.parse(gameData.board_state as string),
+    currentPlayer: gameData.current_player as 'black' | 'white',
+    status: gameData.status as 'waiting' | 'playing' | 'finished',
+    mode: gameData.mode as 'pvp' | 'ai',
+    moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
+    winner: gameData.winner as 'black' | 'white' | 'draw' | null,
+    roomCode: (gameData.room_code as string) || undefined,
+    players: {
+      black: (gameData.black_player_id as string) || undefined,
+      white: (gameData.white_player_id as string) || undefined,
+    },
+    createdAt: gameData.created_at as number,
+    updatedAt: gameData.updated_at as number,
+  };
+}
 
 export async function handleGameAPI(
   request: Request,
   env: Env,
-  ctx: ExecutionContext
+  _ctx: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/game', '');
@@ -23,7 +56,7 @@ export async function handleGameAPI(
   switch (request.method) {
     case 'POST':
       if (path === '/create') {
-        return handleCreateGame(request, env, t);
+        return handleCreateGame(request, env);
       }
       if (path === '/move') {
         return handleMakeMove(request, env, t);
@@ -50,7 +83,7 @@ export async function handleGameAPI(
 /**
  * 創建新遊戲
  */
-async function handleCreateGame(request: Request, env: Env, t: any): Promise<Response> {
+async function handleCreateGame(request: Request, env: Env): Promise<Response> {
   try {
     const { mode, userId } = (await request.json()) as {
       mode: 'pvp' | 'ai';
@@ -62,6 +95,12 @@ async function handleCreateGame(request: Request, env: Env, t: any): Promise<Res
 
     // 如果是 AI 模式，設置玩家
     if (mode === 'ai' && userId) {
+      // 已註冊帳號必須出示有效 JWT，否則任何人都能冒用他人身分累積戰績
+      const actor = await resolveActor(request, env, userId);
+      if (!actor.ok) {
+        return jsonResponse({ error: actor.reason }, 403);
+      }
+
       // 先檢查用戶是否存在，如果不存在則創建匿名用戶
       const existingUser = await env.DB.prepare(
         `
@@ -130,7 +169,6 @@ async function handleCreateGame(request: Request, env: Env, t: any): Promise<Res
     return new Response(
       JSON.stringify({
         error: '創建遊戲失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -146,12 +184,13 @@ async function handleCreateGame(request: Request, env: Env, t: any): Promise<Res
 /**
  * 執行落子
  */
-async function handleMakeMove(request: Request, env: Env, t: any): Promise<Response> {
+async function handleMakeMove(request: Request, env: Env, t: Translations): Promise<Response> {
   try {
-    const { gameId, position, player } = (await request.json()) as {
+    const { gameId, position, player, userId } = (await request.json()) as {
       gameId: string;
       position: Position;
       player: 'black' | 'white';
+      userId?: string;
     };
 
     // 從資料庫獲取遊戲狀態
@@ -164,31 +203,27 @@ async function handleMakeMove(request: Request, env: Env, t: any): Promise<Respo
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
-        status: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      });
+      return jsonResponse({ error: t.gameNotFound }, 404);
     }
 
     // 重構遊戲狀態
-    const gameState: GameState = {
-      id: gameData.id as string,
-      board: JSON.parse(gameData.board_state as string),
-      currentPlayer: gameData.current_player as 'black' | 'white',
-      status: gameData.status as 'waiting' | 'playing' | 'finished',
-      mode: gameData.mode as 'pvp' | 'ai',
-      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
-      winner: gameData.winner as 'black' | 'white' | 'draw' | null,
-      players: {
-        black: (gameData.black_player_id as string) || undefined,
-        white: (gameData.white_player_id as string) || undefined,
-      },
-      createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number,
-    };
+    const gameState: GameState = toGameState(gameData);
+
+    // PVP 對局一律走 Durable Object 的 WebSocket，避免繞過房間的回合與身分檢查
+    if (gameState.mode !== 'ai') {
+      return jsonResponse({ error: '此對局請透過房間連線落子' }, 403);
+    }
+
+    // 落子者必須是這場對局中該顏色的擁有者
+    const seatOwner = gameState.players[player];
+    if (!userId || !seatOwner || seatOwner !== userId) {
+      return jsonResponse({ error: '無權在此對局落子' }, 403);
+    }
+
+    const actor = await resolveActor(request, env, userId);
+    if (!actor.ok) {
+      return jsonResponse({ error: actor.reason }, 403);
+    }
 
     // 執行落子
     const newGameState = GameLogic.makeMove(gameState, position, player);
@@ -240,7 +275,6 @@ async function handleMakeMove(request: Request, env: Env, t: any): Promise<Respo
     return new Response(
       JSON.stringify({
         error: '落子失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 400,
@@ -256,12 +290,17 @@ async function handleMakeMove(request: Request, env: Env, t: any): Promise<Respo
 /**
  * AI 落子
  */
-async function handleAIMove(request: Request, env: Env, t: any): Promise<Response> {
+async function handleAIMove(request: Request, env: Env, t: Translations): Promise<Response> {
   try {
-    const { gameId, difficulty } = (await request.json()) as {
+    const { gameId, difficulty, userId } = (await request.json()) as {
       gameId: string;
       difficulty?: 'easy' | 'medium' | 'hard';
+      userId?: string;
     };
+
+    if (difficulty && !['easy', 'medium', 'hard'].includes(difficulty)) {
+      return jsonResponse({ error: '不支援的難度' }, 400);
+    }
 
     // 獲取遊戲狀態
     const gameData = await env.DB.prepare(
@@ -273,30 +312,32 @@ async function handleAIMove(request: Request, env: Env, t: any): Promise<Respons
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
-        status: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      });
+      return jsonResponse({ error: t.gameNotFound }, 404);
     }
 
-    const gameState: GameState = {
-      id: gameData.id as string,
-      board: JSON.parse(gameData.board_state as string),
-      currentPlayer: gameData.current_player as 'black' | 'white',
-      status: gameData.status as 'waiting' | 'playing' | 'finished',
-      mode: gameData.mode as 'pvp' | 'ai',
-      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
-      winner: gameData.winner as 'black' | 'white' | 'draw' | null,
-      players: {
-        black: (gameData.black_player_id as string) || undefined,
-        white: (gameData.white_player_id as string) || undefined,
-      },
-      createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number,
-    };
+    const gameState: GameState = toGameState(gameData);
+
+    // AI 運算成本高，必須確認是本人的 AI 對局、且確實輪到 AI，才允許觸發
+    if (gameState.mode !== 'ai') {
+      return jsonResponse({ error: '此對局不是 AI 模式' }, 403);
+    }
+
+    if (!userId || gameState.players.black !== userId) {
+      return jsonResponse({ error: '無權操作此對局' }, 403);
+    }
+
+    const actor = await resolveActor(request, env, userId);
+    if (!actor.ok) {
+      return jsonResponse({ error: actor.reason }, 403);
+    }
+
+    if (gameState.status !== 'playing') {
+      return jsonResponse({ error: '遊戲尚未開始或已結束' }, 409);
+    }
+
+    if (gameState.currentPlayer !== 'white') {
+      return jsonResponse({ error: '目前不是 AI 的回合' }, 409);
+    }
 
     // 生成 AI 落子（追蹤思考用時）
     const aiEngine = new AIEngine(env);
@@ -367,7 +408,6 @@ async function handleAIMove(request: Request, env: Env, t: any): Promise<Respons
     return new Response(
       JSON.stringify({
         error: 'AI 落子失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,
@@ -384,7 +424,7 @@ async function handleAIMove(request: Request, env: Env, t: any): Promise<Respons
 /**
  * 獲取遊戲狀態
  */
-async function handleGetGameState(gameId: string, env: Env, t: any): Promise<Response> {
+async function handleGetGameState(gameId: string, env: Env, t: Translations): Promise<Response> {
   try {
     const gameData = await env.DB.prepare(
       `
@@ -395,31 +435,10 @@ async function handleGetGameState(gameId: string, env: Env, t: any): Promise<Res
       .first();
 
     if (!gameData) {
-      return new Response(JSON.stringify({ error: t('gameNotFound') }), {
-        status: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders,
-        },
-      });
+      return jsonResponse({ error: t.gameNotFound }, 404);
     }
 
-    const gameState: GameState = {
-      id: gameData.id as string,
-      board: JSON.parse(gameData.board_state as string),
-      currentPlayer: gameData.current_player as 'black' | 'white',
-      status: gameData.status as 'waiting' | 'playing' | 'finished',
-      mode: gameData.mode as 'pvp' | 'ai',
-      moves: gameData.moves ? JSON.parse(gameData.moves as string) : [],
-      winner: gameData.winner as 'black' | 'white' | 'draw' | null,
-      roomCode: (gameData.room_code as string) || undefined,
-      players: {
-        black: (gameData.black_player_id as string) || undefined,
-        white: (gameData.white_player_id as string) || undefined,
-      },
-      createdAt: gameData.created_at as number,
-      updatedAt: gameData.updated_at as number,
-    };
+    const gameState: GameState = toGameState(gameData);
 
     return new Response(JSON.stringify({ gameState }), {
       headers: {
@@ -432,7 +451,6 @@ async function handleGetGameState(gameId: string, env: Env, t: any): Promise<Res
     return new Response(
       JSON.stringify({
         error: '獲取遊戲狀態失敗',
-        message: error instanceof Error ? error.message : '未知錯誤',
       }),
       {
         status: 500,

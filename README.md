@@ -140,10 +140,41 @@
    wrangler vectorize create gomoku-games --dimensions=1024 --metric=cosine
    ```
 
-6. **部署 Worker**
+   > 維度必須是 1024，與 `@cf/baai/bge-m3` 的輸出一致。維度不符時所有
+   > `upsert`／`query` 都會失敗，歷史棋譜建議功能會靜默失效。
+
+6. **設定必要的機密（部署前必做）**
+   ```bash
+   wrangler secret put JWT_SECRET
+   ```
+
+   > **這一步不能省略。** `JWT_SECRET` 用來簽發與驗證登入 token，
+   > 未設定時所有需要登入的端點（`/api/user/login`、`/api/user/register`、
+   > `/api/user/me`、`/api/user/change-password`）會直接回傳 500，
+   > 已登入帳號的 WebSocket 連線也會被拒絕。
+   >
+   > 請使用至少 32 字元的隨機字串，例如：
+   > ```bash
+   > openssl rand -base64 48
+   > ```
+   >
+   > 程式碼刻意不提供預設金鑰：若退回公開已知的預設值，任何人都能自簽 token
+   > 冒充任意使用者。
+
+7. **部署 Worker**
    ```bash
    wrangler deploy
    ```
+
+### 🔐 環境變數
+
+| 名稱 | 類型 | 必要 | 說明 |
+|------|------|------|------|
+| `JWT_SECRET` | secret | ✅ | 登入 token 的簽章金鑰，至少 32 字元 |
+| `ALLOWED_ORIGINS` | var | ❌ | 逗號分隔的跨域來源白名單。未設定時只允許同源請求 |
+
+管理員密碼另存於 KV（`gomoku_admin` 的 `admin_password`），以 PBKDF2 雜湊儲存。
+舊的明文值在第一次驗證成功後會自動升級為雜湊格式。
 
 ## 📚 API 文檔
 

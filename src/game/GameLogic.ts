@@ -97,14 +97,6 @@ export class GameLogic {
     const isBoardFull = this.isBoardFull(newBoard);
     const shouldDraw = this.shouldDeclareDraw([...gameState.moves, move]);
     const isDraw = !winner && (isBoardFull || shouldDraw);
-    
-    console.log('遊戲結束檢查:', {
-      winner,
-      isBoardFull,
-      shouldDraw,
-      isDraw,
-      moveCount: gameState.moves.length + 1
-    });
 
     // 更新遊戲狀態
     const newGameState: GameState = {
@@ -197,8 +189,8 @@ export class GameLogic {
    * 檢查是否應該判定為平局（基於移動次數）
    */
   static shouldDeclareDraw(moves: Move[]): boolean {
-    // 如果移動次數超過 200 步，判定為平局
-    return moves.length >= 200;
+    // 15x15 棋盤共 225 格，低於這個數字會在仍可分勝負時提前判和
+    return moves.length >= this.BOARD_SIZE * this.BOARD_SIZE;
   }
 
   /**
@@ -367,39 +359,34 @@ export class GameLogic {
    * 評估連線的分數
    */
   private static evaluateLine(line: string): number {
-    let score = 0;
-
-    // 五連
-    if (line.includes('OOOOO')) score += 100000;
+    // 由強到弱依序判定，命中最高的一項就結束。
+    // 原本每一項各自 if 相加，且眠三/眠二又重複比對活三/活二的樣式，
+    // 造成「活三」同時被算成活三加眠三，棋型之間的分數差距失真。
+    if (line.includes('OOOOO')) return 100000;
 
     // 活四
-    if (line.includes('.OOOO.')) score += 10000;
+    if (line.includes('.OOOO.')) return 10000;
 
     // 沖四
-    if (line.includes('XOOOO.') || line.includes('.OOOOX')) score += 1000;
+    if (line.includes('XOOOO.') || line.includes('.OOOOX')) return 1000;
 
     // 活三
-    if (line.includes('.OOO.')) score += 1000;
+    if (line.includes('.OOO.')) return 1000;
 
     // 眠三
-    if (
-      line.includes('.OOO.') ||
-      line.includes('XOO.O.') ||
-      line.includes('.O.OOX')
-    )
-      score += 100;
+    if (line.includes('XOOO.') || line.includes('.OOOX') ||
+        line.includes('OO.O') || line.includes('O.OO')) {
+      return 100;
+    }
 
     // 活二
-    if (line.includes('.OO.')) score += 100;
+    if (line.includes('.OO.')) return 100;
 
     // 眠二
-    if (
-      line.includes('.OO.') ||
-      line.includes('XO.O.') ||
-      line.includes('.O.OX')
-    )
-      score += 10;
+    if (line.includes('XOO.') || line.includes('.OOX') || line.includes('O.O')) {
+      return 10;
+    }
 
-    return score;
+    return 0;
   }
 }
