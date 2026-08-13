@@ -283,9 +283,10 @@ function getGameHTML(t: Translations, language: string): string {
                                 <span class="status-label">${language === 'zh-TW' ? '上一步用時：' : 'Last Move Time:'}</span>
                                 <span id="ai-thinking-time">-</span>
                             </div>
+                            <div class="ai-commentary" id="ai-commentary" style="display: none;"></div>
                         </div>
                     </div>
-                    
+
                     <div class="ai-analysis" id="ai-analysis" style="display: none;">
                         <h4>${language === 'zh-TW' ? 'AI 分析' : 'AI Analysis'}</h4>
                         <div id="analysis-content"></div>
@@ -1971,6 +1972,18 @@ body.modal-open {
     text-align: center;
     font-size: 0.9rem;
     color: #4a5568;
+}
+
+.ai-commentary {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-left: 3px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 0 6px 6px 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 #ai-thinking-time {
@@ -4202,6 +4215,9 @@ class GomokuGame {
                     this.updateAIStatus(currentLanguage === 'zh-TW' ? '已完成' : 'Completed', false);
                     this.updateAIThinkingTime(data.aiMove.thinkingTime);
                 }
+
+                // 講評是落子回應送出後才在背景產生的，稍後再來取
+                this.fetchCommentary(this.gameState.id, this.gameState.moves.length);
             }
         } catch (error) {
             console.error('AI 落子失敗:', error);
@@ -4209,9 +4225,39 @@ class GomokuGame {
         }
     }
     
+    // 取回背景產生的 AI 講評；還沒好就重試幾次後放棄
+    async fetchCommentary(gameId, expectedMoveCount, attempt = 0) {
+        if (!gameId || attempt > 4) return;
+
+        try {
+            const res = await fetch('/api/game/commentary/' + encodeURIComponent(gameId));
+            const data = await res.json();
+            const c = data && data.commentary;
+
+            // 還沒產生，或還是上一手的講評，稍後再試
+            if (!c || (expectedMoveCount && c.moveCount < expectedMoveCount)) {
+                setTimeout(() => this.fetchCommentary(gameId, expectedMoveCount, attempt + 1), 1500);
+                return;
+            }
+
+            this.showCommentary(c.text);
+        } catch (error) {
+            console.warn('取得 AI 講評失敗:', error);
+        }
+    }
+
+    showCommentary(text) {
+        const el = document.getElementById('ai-commentary');
+        if (!el || !text) return;
+
+        // 講評來自語言模型，一律當成不可信文字處理
+        el.textContent = text;
+        el.style.display = 'block';
+    }
+
     handleBoardClick(event) {
         if (!this.isMyTurn) return;
-        
+
         const rect = this.canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;

@@ -89,132 +89,34 @@ describe('basicAdvantageAnalysis', () => {
   });
 });
 
-describe('extractAdvicePayload', () => {
-  const obj = { threats: [{ row: 7, col: 8, severity: 'critical' }] };
-
-  it('llama 形狀：response 已是解析好的物件', () => {
-    expect(engine.extractAdvicePayload({ response: obj })).toEqual(obj);
-  });
-
-  it('舊式形狀：response 是 JSON 字串', () => {
-    expect(engine.extractAdvicePayload({ response: JSON.stringify(obj) })).toEqual(
-      obj
-    );
+describe('extractText', () => {
+  it('llama 形狀：response 是字串', () => {
+    expect(engine.extractText({ response: '黑棋形成活三' })).toBe('黑棋形成活三');
   });
 
   it('OpenAI 形狀：choices[0].message.content', () => {
     expect(
-      engine.extractAdvicePayload({
-        choices: [{ message: { content: JSON.stringify(obj) } }],
-      })
-    ).toEqual(obj);
+      engine.extractText({ choices: [{ message: { content: '白棋需要防守' } }] })
+    ).toBe('白棋需要防守');
   });
 
-  it('容忍 markdown 圍欄與前後贅字', () => {
-    const raw = '好的：\n```json\n' + JSON.stringify(obj) + '\n```';
-    expect(engine.extractAdvicePayload({ response: raw })).toEqual(obj);
-  });
-
-  it('推理模型的 content 為 null 時回傳 null 而非拋錯', () => {
+  it('推理模型的 content 為 null 時回傳空字串而非拋錯', () => {
     expect(
-      engine.extractAdvicePayload({ choices: [{ message: { content: null } }] })
-    ).toBeNull();
+      engine.extractText({ choices: [{ message: { content: null } }] })
+    ).toBe('');
   });
 
-  it('非 JSON 回覆回傳 null', () => {
-    expect(engine.extractAdvicePayload({ response: '我覺得下中間' })).toBeNull();
+  it('llama 回傳物件（非字串）時不誤用', () => {
+    expect(engine.extractText({ response: { threats: [] } })).toBe('');
   });
 
-  it('格式毀損的 JSON 回傳 null', () => {
-    expect(engine.extractAdvicePayload({ response: '{"threats":[{' })).toBeNull();
-  });
-
-  it('完全未知的形狀回傳 null', () => {
-    expect(engine.extractAdvicePayload({})).toBeNull();
+  it('完全未知的形狀回傳空字串', () => {
+    expect(engine.extractText({})).toBe('');
   });
 });
 
-describe('parseAdvice', () => {
-  const board = emptyBoard();
-  const parse = (o: unknown, b = board) => engine.parseAdvice(o, b);
-
-  it('依嚴重程度給權重', () => {
-    const advice = parse({
-      threats: [{ row: 7, col: 8, severity: 'critical' }],
-      opportunities: [],
-      strategy: '守住右側',
-    });
-
-    expect(advice.threats).toEqual([{ row: 7, col: 8, weight: 300 }]);
-    expect(advice.strategy).toBe('守住右側');
-  });
-
-  it('捨棄越界座標', () => {
-    expect(
-      parse({
-        threats: [
-          { row: 99, col: 2, severity: 'high' },
-          { row: -1, col: 0, severity: 'high' },
-        ],
-      }).threats
-    ).toEqual([]);
-  });
-
-  it('捨棄已有棋子的座標', () => {
-    const occupied = emptyBoard();
-    occupied[5]![5] = 'black';
-
-    expect(
-      parse({ threats: [{ row: 5, col: 5, severity: 'critical' }] }, occupied)
-        .threats
-    ).toEqual([]);
-  });
-
-  it('捨棄非整數座標', () => {
-    expect(
-      parse({ threats: [{ row: 'abc', col: 2, severity: 'high' }] }).threats
-    ).toEqual([]);
-  });
-
-  it('未知的 severity 退回 medium 權重', () => {
-    expect(
-      parse({ threats: [{ row: 3, col: 3, severity: 'unknown' }] }).threats
-    ).toEqual([{ row: 3, col: 3, weight: 50 }]);
-  });
-
-  it('限制每類建議的採納數量', () => {
-    const points = Array.from({ length: 10 }, (_, i) => ({
-      row: 0,
-      col: i,
-      severity: 'high',
-    }));
-
-    expect(parse({ threats: points }).threats).toHaveLength(4);
-  });
-
-  it('去除重複座標', () => {
-    expect(
-      parse({
-        threats: [
-          { row: 2, col: 2, severity: 'high' },
-          { row: 2, col: 2, severity: 'critical' },
-        ],
-      }).threats
-    ).toHaveLength(1);
-  });
-
-  it('null 或非物件回傳空建議', () => {
-    expect(parse(null)).toEqual({ threats: [], opportunities: [], strategy: '' });
-    expect(parse('字串')).toEqual({
-      threats: [],
-      opportunities: [],
-      strategy: '',
-    });
-  });
-});
-
-describe('模型建議不可蓋過戰術必然手', () => {
-  it('擋下必敗的分數仍高於模型指名的無關點', () => {
+describe('戰術評分量級', () => {
+  it('擋下必敗的分數遠高於無關點', () => {
     const board = emptyBoard();
     // 黑棋四連，(7,7) 是唯一擋點
     for (const col of [3, 4, 5, 6]) board[7]![col] = 'black';
@@ -222,9 +124,8 @@ describe('模型建議不可蓋過戰術必然手', () => {
 
     const blockScore = engine.evaluateMove(s, { row: 7, col: 7 }, 'white');
     const idleScore = engine.evaluateMove(s, { row: 0, col: 0 }, 'white');
-    const maxAdviceBonus = 300 + 300; // threats + opportunities 同時命中
-
-    expect(blockScore).toBeGreaterThan(idleScore + maxAdviceBonus);
+    // 歷史建議 200 與優劣勢加分 300 都不可能翻轉這個差距
+    expect(blockScore).toBeGreaterThan(idleScore + 500);
   });
 });
 

@@ -13,54 +13,21 @@ import {
 import { GameLogic } from '../game/GameLogic';
 import { VectorizeService } from './VectorizeService';
 
-/** 模型指名的一個座標建議 */
-interface AdvicePoint {
-  row: number;
-  col: number;
-  weight: number;
-}
-
-/** 模型回傳的結構化盤面建議 */
-interface BoardAdvice {
-  /** 建議優先防守的點 */
-  threats: AdvicePoint[];
-  /** 建議優先進攻的點 */
-  opportunities: AdvicePoint[];
-  /** 給玩家看的簡短說明 */
-  strategy: string;
-}
-
-const EMPTY_ADVICE: BoardAdvice = {
-  threats: [],
-  opportunities: [],
-  strategy: '',
-};
-
 /**
- * 模型建議的加分權重
+ * 講評使用的模型（Workers AI model id）
  *
- * 權重刻意壓得很低，只夠在「雙方都沒有明確棋型」時破平手。
+ * 語言模型不參與選點，只負責產生給玩家看的自然語言講評。
  *
- * 依據：以 7 個關鍵盤面各取樣 3 次評測 Workers AI 的模型，
- * 找出全部關鍵點的平均完整率為 llama-3.3-70b 44%、glm-4.7-flash 38%、
- * mistral-small 35%、granite 29%；跳三全數 0%、斜向活三近乎 0%，
- * 且每次回覆平均會指向 1~5 個已有棋子的座標。
- * 同一組盤面下，本檔的 evaluateMove 啟發式是 100% 正確。
- *
- * 也就是說模型在戰術上明顯不如既有的啟發式，它的意見只能當作
- * 安靜局面的參考，絕不能蓋過棋型分數（活三 1000／擋必敗 50000／必勝 100000）。
+ * 依據：以 7 個關鍵盤面各取樣 3 次評測，模型「找出全部關鍵點」的完整率為
+ * llama-3.3-70b 44%、glm-4.7-flash 38%、mistral-small 35%、granite 29%；
+ * 跳三全數 0%、斜向活三近乎 0%，且每次回覆平均會指向 1~5 個已有棋子的座標。
+ * 同一組盤面下，本檔的 evaluateMove 啟發式是 100% 正確（見 test/tactics.test.ts）。
+ * 因此落子完全交給啟發式，模型只做它擅長的事：用自然語言描述局面。
  */
-const ADVICE_WEIGHTS: Record<string, number> = {
-  critical: 300,
-  high: 150,
-  medium: 50,
-};
+const COMMENTARY_MODEL = '@cf/zai-org/glm-4.7-flash';
 
-/** 每類建議最多採納幾點，避免模型灑點洗掉評分差異 */
-const MAX_ADVICE_POINTS = 4;
-
-/** 盤面分析使用的模型（Workers AI model id） */
-const ANALYSIS_MODEL = '@cf/zai-org/glm-4.7-flash';
+/** 講評的長度上限，避免塞爆 KV 與前端版面 */
+const MAX_COMMENTARY_LENGTH = 200;
 
 export class AIEngine {
   private env: Env;
@@ -111,31 +78,27 @@ export class AIEngine {
     }
 
     try {
-      const timeoutMs =
-        difficulty === 'easy' ? 10000 : difficulty === 'medium' ? 20000 : 30000;
-
-      console.log(`[AI] ${difficulty}模式 - 開始並行分析 (${timeoutMs}ms超時)`);
       const analysisStartTime = Date.now();
 
-      const [advice, historicalSuggestions] = await this.gatherAnalysis(
+      // 落子不再等待語言模型：模型的戰術完整率遠低於本檔的啟發式，
+      // 卻要花數秒阻塞玩家。講評改由 waitUntil 於回應之後非同步產生。
+      const historicalSuggestions = await this.getHistoricalSuggestions(
         gameState,
-        aiPlayer,
-        timeoutMs
+        aiPlayer
       );
       const gameAdvantage = this.basicAdvantageAnalysis(gameState, aiPlayer);
 
       console.log(
-        `[AI] ${difficulty}模式分析完成 - 耗時: ${Date.now() - analysisStartTime}ms` +
-          `, 威脅點: ${advice.threats.length}, 機會點: ${advice.opportunities.length}`
+        `[AI] 分析完成 - 耗時: ${Date.now() - analysisStartTime}ms` +
+          `, 歷史建議: ${historicalSuggestions.suggestions.length}`
       );
 
-      // 根據分析結果、歷史建議和難度選擇最佳落子
+      // 根據歷史建議、局面優劣勢和難度選擇最佳落子
       const selectStartTime = Date.now();
       const bestMove = await this.selectBestMove(
         gameState,
         availableMoves,
         aiPlayer,
-        advice,
         difficulty,
         historicalSuggestions,
         gameAdvantage
@@ -153,33 +116,84 @@ export class AIEngine {
   }
 
   /**
-   * 並行取得模型建議與歷史棋譜建議，逾時則退回純啟發式評估
+   * 從 Workers AI 的回傳取出文字
+   *
+   * 同一個 AI binding 對不同模型有不同形狀，實測確認：
+   *   - { response: "字串" }                     llama 系列
+   *   - { choices: [{ message: { content } }] }  OpenAI 格式（GLM 等）
+   * 只認其中一種，換模型時會靜默拿到空字串。
    */
-  private async gatherAnalysis(
+  private extractText(result: unknown): string {
+    const res = result as {
+      response?: unknown;
+      choices?: Array<{ message?: { content?: unknown } }>;
+    };
+
+    if (typeof res?.response === 'string') {
+      return res.response;
+    }
+
+    const content = res?.choices?.[0]?.message?.content;
+    return typeof content === 'string' ? content : '';
+  }
+
+  /**
+   * 產生給玩家看的局勢講評
+   *
+   * 這是語言模型在本專案唯一的職責：它不參與選點，只把局面翻譯成自然語言。
+   * 必須在回應送出後以 waitUntil 呼叫，不可放在落子的關鍵路徑上。
+   */
+  async generateCommentary(
     gameState: GameState,
-    player: Player,
-    timeoutMs: number
-  ): Promise<
-    [BoardAdvice, { suggestions: Position[]; reasoning: string[] }]
-  > {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('AI 分析超時')), timeoutMs);
-    });
+    _player: Player
+  ): Promise<string> {
+    const startTime = Date.now();
+    const lastMove = gameState.moves[gameState.moves.length - 1];
+    const boardString = this.renderBoardWithCoordinates(gameState.board);
+
+    const prompt = `你是五子棋講評員。棋盤 15x15，行列編號 0 到 14。
+
+棋盤（B=黑棋, W=白棋, .=空位）:
+${boardString}
+
+黑棋是玩家，白棋是 AI。${
+      lastMove
+        ? `最後一手是${lastMove.player === 'black' ? '黑棋' : '白棋'}下在 (${lastMove.position.row}, ${lastMove.position.col})。`
+        : ''
+    }
+已進行 ${gameState.moves.length} 手。
+
+請用繁體中文寫一段 60 字以內的局勢講評，說明目前雙方的態勢與接下來的重點。
+只輸出講評文字，不要列座標清單、不要 JSON、不要 markdown。`;
 
     try {
-      return await Promise.race([
-        Promise.all([
-          this.analyzeBoard(gameState, player),
-          this.getHistoricalSuggestions(gameState, player),
-        ]),
-        timeoutPromise,
-      ]);
+      const result = await this.env.AI.run(COMMENTARY_MODEL, {
+        messages: [
+          {
+            role: 'system',
+            content: '你是五子棋講評員，用繁體中文簡潔講評，不超過60字。',
+          },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 300,
+        temperature: 0.6,
+        // GLM 預設會輸出大量思考內容，實測會耗盡 token 且從不產出答案
+        chat_template_kwargs: { enable_thinking: false },
+      });
+
+      const text = this.extractText(result).trim();
+
+      console.log(
+        `[AI] 講評產生完成 - 耗時: ${Date.now() - startTime}ms, 長度: ${text.length}`
+      );
+
+      return text.slice(0, MAX_COMMENTARY_LENGTH);
     } catch (error) {
-      console.warn(
-        `[AI] 分析未於 ${timeoutMs}ms 內完成，改用純啟發式評估:`,
+      console.error(
+        `[AI] 講評產生失敗 (耗時: ${Date.now() - startTime}ms):`,
         error
       );
-      return [EMPTY_ADVICE, { suggestions: [], reasoning: [] }];
+      return '';
     }
   }
 
@@ -280,198 +294,12 @@ export class AIEngine {
   }
 
   /**
-   * 使用 Workers AI 分析棋盤，取得結構化的威脅與機會座標
-   */
-  private async analyzeBoard(
-    gameState: GameState,
-    player: Player
-  ): Promise<BoardAdvice> {
-    const startTime = Date.now();
-    const boardString = this.renderBoardWithCoordinates(gameState.board);
-    const me = player === 'black' ? 'B（黑棋）' : 'W（白棋）';
-    const rival = player === 'black' ? 'W（白棋）' : 'B（黑棋）';
-
-    const prompt = `你是五子棋專家。棋盤為 15x15，行列編號皆為 0 到 14。
-
-棋盤（B=黑棋, W=白棋, .=空位，最上方為列號，最左方為行號）:
-${boardString}
-
-你執 ${me}，對手執 ${rival}，現在輪到你下。
-
-請找出：
-- threats：若不處理、對手下一手就會取得重大優勢的「空位」座標（防守點）
-- opportunities：你下了之後能取得重大優勢的「空位」座標（進攻點）
-
-嚴格規則：
-1. 只能回報目前是「.」的空位，不可回報已有棋子的位置。
-2. row 與 col 都必須是 0 到 14 的整數。
-3. severity 只能是 "critical"、"high"、"medium" 其中之一。
-4. 每個陣列最多 ${MAX_ADVICE_POINTS} 個座標，寧缺勿濫，沒有就給空陣列。
-5. 只輸出 JSON，不要有任何說明文字或 markdown 標記。
-
-輸出格式：
-{"threats":[{"row":7,"col":8,"severity":"critical"}],"opportunities":[{"row":5,"col":5,"severity":"high"}],"strategy":"一句話戰略說明，繁體中文，40字以內"}`;
-
-    try {
-      const response = (await this.env.AI.run(ANALYSIS_MODEL, {
-        messages: [
-          {
-            role: 'system',
-            content:
-              '你是五子棋專家，只輸出符合要求的 JSON，不輸出任何其他內容。',
-          },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 1000,
-        temperature: 0.1,
-        // GLM 預設會先輸出一長串思考內容，實測要 27~45 秒且常在產出答案前
-        // 就耗盡 token（finish_reason=length）。關閉思考後同一題約 2 秒完成。
-        chat_template_kwargs: { enable_thinking: false },
-      }));
-
-      const advice = this.parseAdvice(
-        this.extractAdvicePayload(response),
-        gameState.board
-      );
-
-      console.log(
-        `[AI] 模型分析完成 - 耗時: ${Date.now() - startTime}ms` +
-          `, 採納威脅點 ${advice.threats.length}, 機會點 ${advice.opportunities.length}`
-      );
-
-      return advice;
-    } catch (error) {
-      console.error(
-        `[AI] 模型分析失敗 (耗時: ${Date.now() - startTime}ms)，本手不採納模型建議:`,
-        error
-      );
-      return EMPTY_ADVICE;
-    }
-  }
-
-  /**
-   * 把 Workers AI 的回傳正規化成物件
-   *
-   * 同一個 AI binding 對不同模型有三種形狀，實測確認：
-   *   - { response: 已解析的物件 }          llama 系列（Workers AI 會自動 parse JSON）
-   *   - { response: "字串" }                 舊式文字回覆
-   *   - { choices: [{ message: { content } }] }  OpenAI 格式（GLM 等）
-   * 只認其中一種就會在換模型時靜默拿到空建議。
-   */
-  private extractAdvicePayload(result: unknown): unknown {
-    const res = result as {
-      response?: unknown;
-      choices?: Array<{ message?: { content?: unknown } }>;
-    };
-
-    if (res?.response && typeof res.response === 'object') {
-      return res.response;
-    }
-
-    const content = res?.choices?.[0]?.message?.content;
-    const text =
-      typeof res?.response === 'string'
-        ? res.response
-        : typeof content === 'string'
-          ? content
-          : null;
-
-    if (text === null) {
-      console.warn('[AI] 無法從模型回覆取出內容，忽略本次建議');
-      return null;
-    }
-
-    // 模型常會加上 ```json 圍欄或前後贅字，取最外層的大括號
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-
-    if (start === -1 || end <= start) {
-      console.warn('[AI] 模型回覆中找不到 JSON，忽略本次建議');
-      return null;
-    }
-
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch {
-      console.warn('[AI] 模型回覆不是合法 JSON，忽略本次建議');
-      return null;
-    }
-  }
-
-  /**
-   * 驗證模型回傳的建議
-   *
-   * 語言模型在盤面上的空間推理並不可靠，回傳越界、已有棋子、
-   * 甚至非數字的座標都很常見（實測就出現過指向已有棋子的點），
-   * 因此每一點都必須逐一驗證後才採納。
-   */
-  private parseAdvice(payload: unknown, board: Player[][]): BoardAdvice {
-    if (!payload || typeof payload !== 'object') {
-      return EMPTY_ADVICE;
-    }
-
-    const source = payload as {
-      threats?: unknown;
-      opportunities?: unknown;
-      strategy?: unknown;
-    };
-
-    const toPoints = (value: unknown, label: string): AdvicePoint[] => {
-      if (!Array.isArray(value)) return [];
-
-      const points: AdvicePoint[] = [];
-
-      for (const entry of value) {
-        if (points.length >= MAX_ADVICE_POINTS) break;
-
-        const item = entry as {
-          row?: unknown;
-          col?: unknown;
-          severity?: unknown;
-        };
-        const row = Number(item?.row);
-        const col = Number(item?.col);
-
-        if (!Number.isInteger(row) || !Number.isInteger(col)) continue;
-        if (!GameLogic.isValidPosition({ row, col })) continue;
-        // 已有棋子的位置不可能是落子建議
-        if (!GameLogic.isEmptyPosition(board, { row, col })) {
-          console.warn(`[AI] 模型建議的${label} (${row},${col}) 已有棋子，捨棄`);
-          continue;
-        }
-        // 同一點只採納一次
-        if (points.some(p => p.row === row && p.col === col)) continue;
-
-        const severity =
-          typeof item.severity === 'string' ? item.severity : 'medium';
-        points.push({
-          row,
-          col,
-          weight: ADVICE_WEIGHTS[severity] ?? ADVICE_WEIGHTS.medium!,
-        });
-      }
-
-      return points;
-    };
-
-    const strategy =
-      typeof source.strategy === 'string' ? source.strategy.slice(0, 120) : '';
-
-    return {
-      threats: toPoints(source.threats, '防守點'),
-      opportunities: toPoints(source.opportunities, '進攻點'),
-      strategy,
-    };
-  }
-
-  /**
    * 選擇最佳落子位置
    */
   private async selectBestMove(
     gameState: GameState,
     availableMoves: Position[],
     player: Player,
-    advice: BoardAdvice,
     difficulty: 'easy' | 'medium' | 'hard',
     historicalSuggestions?: {
       suggestions: Position[];
@@ -492,9 +320,8 @@ ${boardString}
     const evaluatedMoves = validMoves.map(position => {
       const score = this.evaluateMove(gameState, position, player);
       let historicalBonus = 0;
-      let aiAnalysisBonus = 0;
       let advantageBonus = 0;
-      
+
       // 如果有歷史建議，給予額外分數
       if (historicalSuggestions && historicalSuggestions.suggestions.length > 0) {
         const isHistoricalMove = historicalSuggestions.suggestions.some(
@@ -503,23 +330,6 @@ ${boardString}
         if (isHistoricalMove) {
           historicalBonus = 200; // 歷史建議額外加分
         }
-      }
-      
-      // 採納模型指名的座標：先前是比對回覆裡有沒有「防守/進攻」等字眼，
-      // 而提示詞本身就要求模型談這些，等於恆真，模型實際上沒有參與決策。
-      // 現在改為只有模型明確指到這一點才加分，權重依嚴重程度。
-      const threat = advice.threats.find(
-        p => p.row === position.row && p.col === position.col
-      );
-      if (threat) {
-        aiAnalysisBonus += threat.weight;
-      }
-
-      const opportunity = advice.opportunities.find(
-        p => p.row === position.row && p.col === position.col
-      );
-      if (opportunity) {
-        aiAnalysisBonus += opportunity.weight;
       }
 
       // 根據局面優劣勢調整分數
@@ -549,7 +359,7 @@ ${boardString}
         }
       }
       
-      return { position, score: score + historicalBonus + aiAnalysisBonus + advantageBonus };
+      return { position, score: score + historicalBonus + advantageBonus };
     });
 
     // 按分數排序
@@ -587,9 +397,7 @@ ${boardString}
     return {
       position: selectedMove.position,
       confidence: Math.min(selectedMove.score / 1000, 1.0),
-      reasoning:
-        advice.strategy ||
-        `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
+      reasoning: `在 (${selectedMove.position.row}, ${selectedMove.position.col}) 落子`,
     };
   }
 

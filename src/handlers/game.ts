@@ -43,10 +43,14 @@ function toGameState(gameData: Record<string, unknown>): GameState {
   };
 }
 
+/** 講評在 KV 的鍵；設 TTL 讓對局結束後自動清掉 */
+const commentaryKey = (gameId: string) => `commentary:${gameId}`;
+const COMMENTARY_TTL_SECONDS = 60 * 60;
+
 export async function handleGameAPI(
   request: Request,
   env: Env,
-  _ctx: ExecutionContext
+  ctx: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname.replace('/api/game', '');
@@ -59,10 +63,10 @@ export async function handleGameAPI(
         return handleCreateGame(request, env);
       }
       if (path === '/move') {
-        return handleMakeMove(request, env, t);
+        return handleMakeMove(request, env, t, ctx);
       }
       if (path === '/ai-move') {
-        return handleAIMove(request, env, t);
+        return handleAIMove(request, env, t, ctx);
       }
       break;
 
@@ -70,6 +74,10 @@ export async function handleGameAPI(
       if (path.startsWith('/state/')) {
         const gameId = path.replace('/state/', '');
         return handleGetGameState(gameId, env, t);
+      }
+      if (path.startsWith('/commentary/')) {
+        const gameId = path.replace('/commentary/', '');
+        return handleGetCommentary(gameId, env);
       }
       break;
   }
@@ -184,7 +192,12 @@ async function handleCreateGame(request: Request, env: Env): Promise<Response> {
 /**
  * 執行落子
  */
-async function handleMakeMove(request: Request, env: Env, t: Translations): Promise<Response> {
+async function handleMakeMove(
+  request: Request,
+  env: Env,
+  t: Translations,
+  ctx?: ExecutionContext
+): Promise<Response> {
   try {
     const { gameId, position, player, userId } = (await request.json()) as {
       gameId: string;
@@ -248,20 +261,18 @@ async function handleMakeMove(request: Request, env: Env, t: Translations): Prom
       )
       .run();
 
-    // 如果遊戲結束，儲存到 Vectorize 和 AI 對戰記錄
+    // 如果遊戲結束，保存 AI 對戰記錄
     if (newGameState.status === 'finished') {
-      // 如果是 AI 模式，保存 AI 對戰記錄
       if (newGameState.mode === 'ai') {
-        console.log('玩家落子導致遊戲結束，準備保存 AI 對戰記錄:', {
-          gameId: newGameState.id,
-          winner: newGameState.winner,
-          playerId: newGameState.players.black
-        });
         await saveAIGameRecord(newGameState, env);
       }
-      
-      const vectorizeService = new VectorizeService(env);
-      await vectorizeService.storeGameState(newGameState);
+
+      // 向量寫入不影響回應，移出關鍵路徑
+      ctx?.waitUntil(
+        new VectorizeService(env)
+          .storeGameState(newGameState)
+          .catch(error => console.error('背景儲存棋局向量失敗:', error))
+      );
     }
 
     return new Response(JSON.stringify({ gameState: newGameState }), {
@@ -290,7 +301,12 @@ async function handleMakeMove(request: Request, env: Env, t: Translations): Prom
 /**
  * AI 落子
  */
-async function handleAIMove(request: Request, env: Env, t: Translations): Promise<Response> {
+async function handleAIMove(
+  request: Request,
+  env: Env,
+  t: Translations,
+  ctx?: ExecutionContext
+): Promise<Response> {
   try {
     const { gameId, difficulty, userId } = (await request.json()) as {
       gameId: string;
@@ -374,17 +390,40 @@ async function handleAIMove(request: Request, env: Env, t: Translations): Promis
 
     // 如果遊戲結束，保存遊戲記錄
     if (newGameState.status === 'finished') {
-      console.log('遊戲結束，準備保存 AI 對戰記錄:', {
-        gameId: newGameState.id,
-        winner: newGameState.winner,
-        playerId: newGameState.players.black
-      });
       await saveAIGameRecord(newGameState, env);
     }
 
-    // 儲存到 Vectorize（不返回分析）
-    const vectorizeService = new VectorizeService(env);
-    await vectorizeService.storeGameState(newGameState);
+    // 向量寫入與講評都不影響這次回應，移出關鍵路徑以免拖慢落子
+    ctx?.waitUntil(
+      (async () => {
+        try {
+          await new VectorizeService(env).storeGameState(newGameState);
+        } catch (error) {
+          console.error('背景儲存棋局向量失敗:', error);
+        }
+
+        try {
+          const commentary = await aiEngine.generateCommentary(
+            newGameState,
+            'white'
+          );
+
+          if (commentary) {
+            await env.gomoku_admin.put(
+              commentaryKey(gameId),
+              JSON.stringify({
+                moveCount: newGameState.moves.length,
+                text: commentary,
+                createdAt: Date.now(),
+              }),
+              { expirationTtl: COMMENTARY_TTL_SECONDS }
+            );
+          }
+        } catch (error) {
+          console.error('背景產生講評失敗:', error);
+        }
+      })()
+    );
 
     return new Response(
       JSON.stringify({
@@ -420,6 +459,30 @@ async function handleAIMove(request: Request, env: Env, t: Translations): Promis
   }
 }
 
+
+/**
+ * 取得該對局最新的 AI 講評
+ *
+ * 講評是在落子回應送出後才於背景產生，因此前端拿到落子結果後
+ * 需要稍後再來取一次；還沒好就回傳 null，由前端自行重試。
+ */
+async function handleGetCommentary(
+  gameId: string,
+  env: Env
+): Promise<Response> {
+  try {
+    const stored = await env.gomoku_admin.get(commentaryKey(gameId));
+
+    if (!stored) {
+      return jsonResponse({ commentary: null });
+    }
+
+    return jsonResponse({ commentary: JSON.parse(stored) });
+  } catch (error) {
+    console.error('取得講評失敗:', error);
+    return jsonResponse({ commentary: null });
+  }
+}
 
 /**
  * 獲取遊戲狀態
