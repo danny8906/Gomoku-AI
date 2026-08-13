@@ -156,20 +156,22 @@ export class SelfTrainingService {
       board[bestMove.row]![bestMove.col] = currentPlayer;
       moveCount++;
 
-      // 檢查勝負
+      // 先記錄再判斷勝負：原本在致勝時直接 break，
+      // 導致整局最關鍵的那一手從未進入棋譜，也就永遠學不到
+      game.moves.push(move);
+
       if (GameLogic.checkWinner(board, bestMove, currentPlayer)) {
         game.finalOutcome = currentPlayer === 'black' ? 'win' : 'lose';
         move.moveQuality = 'good' as const;
         break;
       }
 
-      // 檢查平局
-      if (moveCount >= 225) { // 15x15棋盤
+      // 走滿上限仍未分勝負即視為和局
+      if (moveCount >= maxMoves) {
         game.finalOutcome = 'draw';
         break;
       }
 
-      game.moves.push(move);
       currentPlayer = currentPlayer === 'black' ? 'white' : 'black';
     }
 
@@ -335,7 +337,10 @@ export class SelfTrainingService {
     for (let i = 0; i < game.moves.length; i++) {
       const move = game.moves[i];
       if (!move) continue;
-      
+
+      // 致勝的一手已經標記為 good，不要被通用規則覆寫掉
+      if (move.moveQuality === 'good') continue;
+
       // 根據遊戲結果和移動時機評估
       if (game.finalOutcome === 'win') {
         // 勝利遊戲中，後期的關鍵移動更有價值
