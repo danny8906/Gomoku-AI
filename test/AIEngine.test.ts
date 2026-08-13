@@ -145,7 +145,7 @@ describe('parseAdvice', () => {
       strategy: '守住右側',
     });
 
-    expect(advice.threats).toEqual([{ row: 7, col: 8, weight: 2000 }]);
+    expect(advice.threats).toEqual([{ row: 7, col: 8, weight: 300 }]);
     expect(advice.strategy).toBe('守住右側');
   });
 
@@ -179,7 +179,7 @@ describe('parseAdvice', () => {
   it('未知的 severity 退回 medium 權重', () => {
     expect(
       parse({ threats: [{ row: 3, col: 3, severity: 'unknown' }] }).threats
-    ).toEqual([{ row: 3, col: 3, weight: 400 }]);
+    ).toEqual([{ row: 3, col: 3, weight: 50 }]);
   });
 
   it('限制每類建議的採納數量', () => {
@@ -222,7 +222,7 @@ describe('模型建議不可蓋過戰術必然手', () => {
 
     const blockScore = engine.evaluateMove(s, { row: 7, col: 7 }, 'white');
     const idleScore = engine.evaluateMove(s, { row: 0, col: 0 }, 'white');
-    const maxAdviceBonus = 2000 + 2000; // threats + opportunities 同時命中
+    const maxAdviceBonus = 300 + 300; // threats + opportunities 同時命中
 
     expect(blockScore).toBeGreaterThan(idleScore + maxAdviceBonus);
   });
