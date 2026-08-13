@@ -6,6 +6,7 @@ import { GameState, Player, Position, WebSocketMessage, Env } from '../types';
 import { GameLogic } from '../game/GameLogic';
 import { AIEngine } from '../ai/AIEngine';
 import { verifyJWT } from '../utils/auth';
+import { PatternService } from '../database/PatternService';
 
 /** 玩家離線後的寬限期限，以 userId 對應到期時間 */
 type LeaveDeadlines = Record<string, number>;
@@ -1397,6 +1398,13 @@ export class GameRoom {
       )
         .bind(this.gameState.winner, Date.now(), this.gameState.id)
         .run();
+
+      // 擷取棋型供 AI 參考；失敗不影響結算結果
+      try {
+        await new PatternService(this.env).recordGame(this.gameState);
+      } catch (error) {
+        console.error('記錄棋型失敗:', error);
+      }
 
       console.log(`對局結算完成: ${this.gameState.id}`);
     } catch (error) {

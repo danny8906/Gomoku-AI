@@ -6,6 +6,7 @@ import { Env, GameState, Position } from '../types';
 import { GameLogic } from '../game/GameLogic';
 import { AIEngine } from '../ai/AIEngine';
 import { VectorizeService } from '../ai/VectorizeService';
+import { PatternService } from '../database/PatternService';
 import { corsHeaders } from '../utils/cors';
 import { saveAIGameRecord } from './gameRecord';
 import { detectLanguage, getTranslations, Translations } from '../utils/i18n';
@@ -267,11 +268,16 @@ async function handleMakeMove(
         await saveAIGameRecord(newGameState, env);
       }
 
-      // 向量寫入不影響回應，移出關鍵路徑
+      // 棋型與向量寫入不影響回應，移出關鍵路徑
       ctx?.waitUntil(
-        new VectorizeService(env)
-          .storeGameState(newGameState)
-          .catch(error => console.error('背景儲存棋局向量失敗:', error))
+        (async () => {
+          try {
+            await new PatternService(env).recordGame(newGameState);
+            await new VectorizeService(env).storeGameState(newGameState);
+          } catch (error) {
+            console.error('背景記錄棋局失敗:', error);
+          }
+        })()
       );
     }
 
@@ -393,13 +399,17 @@ async function handleAIMove(
       await saveAIGameRecord(newGameState, env);
     }
 
-    // 向量寫入與講評都不影響這次回應，移出關鍵路徑以免拖慢落子
+    // 棋型記錄與講評都不影響這次回應，移出關鍵路徑以免拖慢落子
     ctx?.waitUntil(
       (async () => {
-        try {
-          await new VectorizeService(env).storeGameState(newGameState);
-        } catch (error) {
-          console.error('背景儲存棋局向量失敗:', error);
+        // 棋型書只在對局結束時擷取一次，逐手寫入沒有意義
+        if (newGameState.status === 'finished') {
+          try {
+            await new PatternService(env).recordGame(newGameState);
+            await new VectorizeService(env).storeGameState(newGameState);
+          } catch (error) {
+            console.error('背景記錄棋局失敗:', error);
+          }
         }
 
         try {

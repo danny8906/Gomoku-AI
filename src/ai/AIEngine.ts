@@ -11,7 +11,7 @@ import {
   GameAnalysis,
 } from '../types';
 import { GameLogic } from '../game/GameLogic';
-import { VectorizeService } from './VectorizeService';
+import { PatternService } from '../database/PatternService';
 
 /**
  * 講評使用的模型（Workers AI model id）
@@ -31,11 +31,11 @@ const MAX_COMMENTARY_LENGTH = 200;
 
 export class AIEngine {
   private env: Env;
-  private vectorizeService: VectorizeService;
+  private patternService: PatternService;
 
   constructor(env: Env) {
     this.env = env;
-    this.vectorizeService = new VectorizeService(env);
+    this.patternService = new PatternService(env);
   }
 
   /**
@@ -233,6 +233,10 @@ ${boardString}
 
   /**
    * 獲取歷史棋譜建議
+   *
+   * 改用局部棋型的精確比對，不再走文字 embedding 的相似度檢索
+   * （實測相似度無法分辨盤面，等同隨機挑舊局）。
+   * 現在只是一次帶索引的 D1 查詢，不需要模型推論，也不需要超時保護。
    */
   private async getHistoricalSuggestions(
     gameState: GameState,
@@ -241,33 +245,7 @@ ${boardString}
     suggestions: Position[];
     reasoning: string[];
   }> {
-    const startTime = Date.now();
-    console.log(`[AI] 開始獲取歷史建議`);
-    
-    try {
-      // 設置10秒超時，如果超時則返回空建議
-      const timeoutPromise = new Promise<{ suggestions: Position[]; reasoning: string[] }>((_, reject) => {
-        setTimeout(() => {
-          console.log(`[AI] 歷史建議超時 (10秒)`);
-          reject(new Error('歷史建議超時'));
-        }, 10000);
-      });
-
-      const result = await Promise.race([
-        this.vectorizeService.getHistoricalMovesSuggestions(gameState),
-        timeoutPromise
-      ]);
-      
-      console.log(`[AI] 歷史建議完成 - 耗時: ${Date.now() - startTime}ms, 建議數: ${result.suggestions.length}`);
-      return result;
-    } catch (error) {
-      const errorTime = Date.now() - startTime;
-      console.warn(`[AI] 獲取歷史建議失敗 (耗時: ${errorTime}ms)，使用快速模式:`, error);
-      return {
-        suggestions: [],
-        reasoning: ['快速模式：無歷史建議'],
-      };
-    }
+    return this.patternService.suggest(gameState);
   }
 
   /**
