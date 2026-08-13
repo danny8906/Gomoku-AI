@@ -49,8 +49,8 @@ async function handleAITrainingAPI(request: Request, env: Env): Promise<Response
   });
 }
 
-// Cron Job 處理器
-export async function scheduled(
+// Cron Job 處理器（必須掛在 default export 上，具名 export 不會被 Workers runtime 當作 handler）
+async function scheduled(
   event: ScheduledEvent,
   env: Env,
   ctx: ExecutionContext
@@ -124,4 +124,5 @@ export default {
       );
     }
   },
+  scheduled,
 };
